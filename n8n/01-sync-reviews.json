@@ -1,0 +1,58 @@
+{
+  "name": "Отзывы МП: выгрузка раз в час",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 7
+            }
+          ]
+        }
+      },
+      "id": "c3000000-0000-4000-8000-000000000001",
+      "name": "Каждый час",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ПАНЕЛЬ.example.com/api/jobs/sync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "c3000000-0000-4000-8000-000000000002",
+      "name": "Панель: выгрузить отзывы",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_PANEL_CREDENTIAL_ID",
+          "name": "Панель x-api-key"
+        }
+      },
+      "notes": "Панель сама ходит в WB и Ozon своими токенами, генерирует черновики ИИ и ставит их в очередь, если автоответ включён. Ответ: {ok, results:[{marketplace, fetched, created, drafted, queued, error}]}"
+    }
+  ],
+  "connections": {
+    "Каждый час": {
+      "main": [[{ "node": "Панель: выгрузить отзывы", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

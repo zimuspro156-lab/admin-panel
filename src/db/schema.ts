@@ -76,8 +76,6 @@ export const reviews = pgTable(
     /** manual - оператор нажал «Поставить», auto - сработало правило автоответа. */
     answerSource: text('answer_source'),
     answeredByUserId: integer('answered_by_user_id'),
-    /** Раньше этого времени воркфлоу отправки отзыв не забирает. */
-    sendAfter: timestamp('send_after', { withTimezone: true }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
@@ -97,20 +95,31 @@ export const reviews = pgTable(
 /** Настройки панели: единственная строка с id = 1. */
 export const settings = pgTable('settings', {
   id: integer('id').primaryKey().default(1),
+  /**
+   * Единственный переключатель автоответа: включён - черновик ИИ уходит на
+   * маркетплейс сам, выключен - всё ждёт оператора. Без черновика автоответ
+   * не срабатывает никогда, даже если переключатель включён.
+   */
   autoReplyEnabled: boolean('auto_reply_enabled').notNull().default(false),
-  /** Оценки, на которые разрешён автоответ. */
-  autoReplyRatings: jsonb('auto_reply_ratings').$type<number[]>().notNull().default([5, 4]),
-  autoReplyMarketplaces: jsonb('auto_reply_marketplaces')
-    .$type<string[]>()
-    .notNull()
-    .default(['wb', 'ozon']),
-  /** Пауза перед автоотправкой: окно, чтобы оператор успел вмешаться. */
-  autoReplyDelayMinutes: integer('auto_reply_delay_minutes').notNull().default(15),
-  autoReplyMaxPerHour: integer('auto_reply_max_per_hour').notNull().default(30),
   /** Ozon: помечать отзыв обработанным вместе с комментарием. */
   ozonMarkProcessed: boolean('ozon_mark_processed').notNull().default(true),
-  /** Вебхук n8n для немедленной отправки после нажатия «Поставить». */
-  n8nSendWebhookUrl: text('n8n_send_webhook_url'),
+  /** Тон ответов. Правится в панели, деплой не нужен. */
+  aiPrompt: text('ai_prompt').notNull().default(''),
+  aiModel: text('ai_model').notNull().default('gpt-6-luna'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
+ * Доступы к внешним системам: вводятся администратором в панели и лежат
+ * зашифрованными (AES-256-GCM, ключ в ENCRYPTION_KEY). В коде они никогда
+ * не попадают в логи и не отдаются наружу - только хвост через maskSecret.
+ */
+export const integrations = pgTable('integrations', {
+  id: integer('id').primaryKey().default(1),
+  wbToken: text('wb_token'),
+  ozonClientId: text('ozon_client_id'),
+  ozonApiKey: text('ozon_api_key'),
+  openaiApiKey: text('openai_api_key'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -140,3 +149,4 @@ export const auditLog = pgTable(
 export type User = typeof users.$inferSelect
 export type Review = typeof reviews.$inferSelect
 export type Settings = typeof settings.$inferSelect
+export type Integrations = typeof integrations.$inferSelect

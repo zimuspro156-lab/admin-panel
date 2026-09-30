@@ -8,7 +8,7 @@ import { auditLog, users } from '@/db/schema'
 import { countUsers, hashPassword, normalizeLogin, verifyPassword } from '@/lib/auth'
 import { createSession, deleteSession } from '@/lib/session'
 
-export type FormState = { error?: string; ok?: boolean }
+export type FormState = { error?: string; ok?: boolean; message?: string }
 
 const credentialsSchema = z.object({
   login: z.string().trim().min(3, 'Логин короче 3 символов'),

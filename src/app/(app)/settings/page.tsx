@@ -1,4 +1,4 @@
-import { SettingsForm } from '@/components/settings-form'
+import { RunSyncForm, SettingsForm } from '@/components/settings-form'
 import { formatDateTime } from '@/lib/format'
 import { requireRole } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
@@ -20,10 +20,13 @@ export default async function SettingsPage() {
 
       <SettingsForm settings={settings} />
 
-      <p className="text-sm text-[var(--color-muted)]">
-        Токены Wildberries и Ozon и ключ OpenAI живут в credentials n8n, а не в панели. Панель не
-        обращается к маркетплейсам напрямую.
-      </p>
+      <div className="card p-4">
+        <h2 className="mb-2 font-medium">Выгрузка вне расписания</h2>
+        <p className="mb-3 text-sm text-[var(--color-muted)]">
+          Обычно отзывы забирает n8n раз в час. Эта кнопка делает то же самое прямо сейчас.
+        </p>
+        <RunSyncForm />
+      </div>
     </div>
   )
 }

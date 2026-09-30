@@ -1,0 +1,12 @@
+{$PANEL_DOMAIN} {
+	encode zstd gzip
+
+	# Панель - единственный апстрим, база наружу не смотрит.
+	reverse_proxy panel:3000
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}

@@ -5,6 +5,7 @@ import type { User } from '@/db/schema'
 const links = [
   { href: '/reviews', label: 'Отзывы' },
   { href: '/settings', label: 'Настройки', adminOnly: true },
+  { href: '/connections', label: 'Подключения', adminOnly: true },
   { href: '/users', label: 'Пользователи', adminOnly: true },
 ]
 

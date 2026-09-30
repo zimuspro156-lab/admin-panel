@@ -7,6 +7,15 @@ CREATE TABLE "audit_log" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "integrations" (
+	"id" integer PRIMARY KEY DEFAULT 1 NOT NULL,
+	"wb_token" text,
+	"ozon_client_id" text,
+	"ozon_api_key" text,
+	"openai_api_key" text,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "reviews" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"marketplace" text NOT NULL,
@@ -29,7 +38,6 @@ CREATE TABLE "reviews" (
 	"answer_text" text,
 	"answer_source" text,
 	"answered_by_user_id" integer,
-	"send_after" timestamp with time zone,
 	"sent_at" timestamp with time zone,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"last_error" text,
@@ -41,12 +49,9 @@ CREATE TABLE "reviews" (
 CREATE TABLE "settings" (
 	"id" integer PRIMARY KEY DEFAULT 1 NOT NULL,
 	"auto_reply_enabled" boolean DEFAULT false NOT NULL,
-	"auto_reply_ratings" jsonb DEFAULT '[5,4]'::jsonb NOT NULL,
-	"auto_reply_marketplaces" jsonb DEFAULT '["wb","ozon"]'::jsonb NOT NULL,
-	"auto_reply_delay_minutes" integer DEFAULT 15 NOT NULL,
-	"auto_reply_max_per_hour" integer DEFAULT 30 NOT NULL,
 	"ozon_mark_processed" boolean DEFAULT true NOT NULL,
-	"n8n_send_webhook_url" text,
+	"ai_prompt" text DEFAULT '' NOT NULL,
+	"ai_model" text DEFAULT 'gpt-6-luna' NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

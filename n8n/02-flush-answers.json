@@ -1,0 +1,57 @@
+{
+  "name": "Отзывы МП: дослать очередь ответов",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "c4000000-0000-4000-8000-000000000001",
+      "name": "Каждые 10 минут",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ПАНЕЛЬ.example.com/api/jobs/flush",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 25 }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "c4000000-0000-4000-8000-000000000002",
+      "name": "Панель: дослать ответы",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_PANEL_CREDENTIAL_ID",
+          "name": "Панель x-api-key"
+        }
+      },
+      "notes": "Страховка. Ответ оператора уходит сразу при нажатии «Поставить», а сюда попадает то, что не ушло: автоответы и отзывы, где первая попытка не прошла."
+    }
+  ],
+  "connections": {
+    "Каждые 10 минут": {
+      "main": [[{ "node": "Панель: дослать ответы", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -28,7 +28,6 @@ export type ReviewCardData = {
   lastError: string | null
   createdAtLabel: string
   sentAtLabel: string | null
-  sendAfterLabel: string | null
 }
 
 const EDITABLE_STATUSES = new Set(['new', 'failed', 'skipped', 'queued'])
@@ -121,7 +120,6 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
         <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm">
           <p className="mb-1 text-xs font-medium tracking-wide text-blue-700 uppercase">
             {review.status === 'sending' ? 'Отправляется' : 'В очереди на отправку'}
-            {review.sendAfterLabel ? ` · не раньше ${review.sendAfterLabel}` : ''}
           </p>
           <p className="whitespace-pre-line text-blue-900">{review.answerText}</p>
           {review.status === 'queued' && review.answerSource === 'auto' ? (

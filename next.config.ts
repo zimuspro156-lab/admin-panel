@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // Standalone-сборка нужна образу: он запускается как node server.js.
+  output: 'standalone',
   images: {
     // Фото из отзывов лежат на CDN маркетплейсов.
     remotePatterns: [

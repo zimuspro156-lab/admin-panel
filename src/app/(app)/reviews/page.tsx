@@ -43,7 +43,6 @@ export default async function ReviewsPage({ searchParams }: PageProps) {
     lastError: review.lastError,
     createdAtLabel: formatDateTime(review.mpCreatedAt ?? review.createdAt),
     sentAtLabel: review.sentAt ? formatDateTime(review.sentAt) : null,
-    sendAfterLabel: review.sendAfter ? formatDateTime(review.sendAfter) : null,
   }))
 
   function pageHref(page: number) {
@@ -63,8 +62,8 @@ export default async function ReviewsPage({ searchParams }: PageProps) {
         <h1 className="text-xl font-semibold">Отзывы</h1>
         <p className="text-sm text-[var(--color-muted)]">
           {config.autoReplyEnabled
-            ? `Автоответ включён: оценки ${config.autoReplyRatings.join(', ')}, задержка ${config.autoReplyDelayMinutes} мин`
-            : 'Автоответ выключен, всё уходит только после аппрува'}
+            ? 'Автоответ включён: черновики ИИ уходят на маркетплейс сами'
+            : 'Автоответ выключен, всё уходит только после подтверждения оператором'}
         </p>
       </div>
 

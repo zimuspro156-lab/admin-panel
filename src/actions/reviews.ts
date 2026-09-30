@@ -6,8 +6,7 @@ import { z } from 'zod'
 import { db } from '@/db'
 import { auditLog, reviews } from '@/db/schema'
 import { requireUser } from '@/lib/auth'
-import { pokeSendWebhook } from '@/lib/n8n'
-import { getSettings } from '@/lib/settings'
+import { dispatchQueue } from '@/lib/dispatch'
 import type { FormState } from './auth'
 
 const answerSchema = z.object({
@@ -16,8 +15,8 @@ const answerSchema = z.object({
 })
 
 /**
- * «Поставить»: сохраняет текст, ставит отзыв в очередь на отправку
- * и сразу дёргает вебхук n8n, чтобы ответ ушёл не дожидаясь крона.
+ * «Поставить» и «Отправить ответ»: сохраняем текст, ставим в очередь и тут же
+ * отправляем. Оператор сразу видит исход, а не «ушло куда-то в очередь».
  */
 export async function sendAnswerAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser()
@@ -32,7 +31,6 @@ export async function sendAnswerAction(_prev: FormState, formData: FormData): Pr
 
   const { reviewId, text } = parsed.data
 
-  // Отправлять можно только то, что ещё не ушло и не находится в полёте.
   const updated = await db
     .update(reviews)
     .set({
@@ -40,7 +38,6 @@ export async function sendAnswerAction(_prev: FormState, formData: FormData): Pr
       answerSource: 'manual',
       answeredByUserId: user.id,
       status: 'queued',
-      sendAfter: null,
       lastError: null,
       updatedAt: new Date(),
     })
@@ -58,10 +55,12 @@ export async function sendAnswerAction(_prev: FormState, formData: FormData): Pr
     meta: { length: text.length },
   })
 
-  const config = await getSettings()
-  await pokeSendWebhook(config.n8nSendWebhookUrl, reviewId)
-
+  const summary = await dispatchQueue({ reviewId, limit: 1 })
   revalidatePath('/reviews')
+
+  if (summary.failed > 0) {
+    return { error: summary.errors[0] ?? 'Маркетплейс не принял ответ' }
+  }
   return { ok: true }
 }
 
@@ -82,7 +81,7 @@ export async function skipReviewAction(formData: FormData): Promise<void> {
   revalidatePath('/reviews')
 }
 
-/** Возврат зависшей или упавшей отправки в очередь. */
+/** Повтор отправки для упавшего или зависшего отзыва. */
 export async function retryAnswerAction(formData: FormData): Promise<void> {
   const user = await requireUser()
   const parsed = reviewIdSchema.safeParse(formData.get('reviewId'))
@@ -90,20 +89,18 @@ export async function retryAnswerAction(formData: FormData): Promise<void> {
 
   const updated = await db
     .update(reviews)
-    .set({ status: 'queued', sendAfter: null, lastError: null, updatedAt: new Date() })
+    .set({ status: 'queued', lastError: null, updatedAt: new Date() })
     .where(and(eq(reviews.id, parsed.data), inArray(reviews.status, ['failed', 'sending'])))
     .returning({ id: reviews.id })
 
   if (updated.length === 0) return
 
   await db.insert(auditLog).values({ userId: user.id, action: 'answer.retry', reviewId: parsed.data })
-
-  const config = await getSettings()
-  await pokeSendWebhook(config.n8nSendWebhookUrl, parsed.data)
+  await dispatchQueue({ reviewId: parsed.data, limit: 1 })
   revalidatePath('/reviews')
 }
 
-/** Снимает автоответ с очереди, пока не истекла задержка. */
+/** Снимает автоответ с очереди, пока он ещё не ушёл. */
 export async function cancelAutoAnswerAction(formData: FormData): Promise<void> {
   const user = await requireUser()
   const parsed = reviewIdSchema.safeParse(formData.get('reviewId'))
@@ -111,7 +108,7 @@ export async function cancelAutoAnswerAction(formData: FormData): Promise<void> 
 
   const updated = await db
     .update(reviews)
-    .set({ status: 'new', answerText: null, answerSource: null, sendAfter: null, updatedAt: new Date() })
+    .set({ status: 'new', answerText: null, answerSource: null, updatedAt: new Date() })
     .where(and(eq(reviews.id, parsed.data), eq(reviews.status, 'queued'), eq(reviews.answerSource, 'auto')))
     .returning({ id: reviews.id })
 
