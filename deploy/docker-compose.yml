@@ -34,6 +34,9 @@ services:
       dockerfile: Dockerfile
       target: runner
     restart: unless-stopped
+    # Только на петлю: наружу панель выпускает Caddy или ваш уже стоящий прокси.
+    ports:
+      - '${PANEL_BIND:-127.0.0.1:3000}:3000'
     depends_on:
       db:
         condition: service_healthy
@@ -48,9 +51,12 @@ services:
       timeout: 5s
       retries: 5
 
+  # Свой обратный прокси с автоматическим TLS. Нужен, только если порты 80 и 443
+  # свободны. Поднимается профилем: docker compose --profile edge up -d
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    profiles: ['edge']
     depends_on:
       - panel
     ports:

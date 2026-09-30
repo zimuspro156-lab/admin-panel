@@ -15,6 +15,48 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+# Сборка Next.js - самый прожорливый шаг: на 2 ГБ без подкачки она падает с
+# OOM посреди процесса, и это выглядит как непонятная ошибка сборки.
+ensure_memory() {
+  local ram_mb swap_mb total_mb
+  ram_mb=$(free -m | awk '/^Mem:/ {print $2}')
+  swap_mb=$(free -m | awk '/^Swap:/ {print $2}')
+  total_mb=$((ram_mb + swap_mb))
+
+  echo "==> Память: ${ram_mb} МБ RAM + ${swap_mb} МБ swap"
+  if [ "$total_mb" -ge 3000 ]; then
+    return 0
+  fi
+
+  echo "    Для сборки этого мало. Добавляю файл подкачки на 2 ГБ."
+  if [ -f /swapfile ]; then
+    echo "    /swapfile уже есть, подключаю"
+  else
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+  fi
+  swapon /swapfile 2>/dev/null || true
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "    Подкачка включена: $(free -m | awk '/^Swap:/ {print $2}') МБ"
+}
+
+ensure_disk() {
+  local free_gb
+  free_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+  echo "==> Свободно на диске: ${free_gb} ГБ"
+  if [ "$free_gb" -lt 5 ]; then
+    echo "    Меньше 5 ГБ. Образам и сборке этого впритык; освободите место, если сборка упадёт." >&2
+  fi
+}
+
+if [ "$(id -u)" = "0" ]; then
+  ensure_memory
+else
+  echo "==> Скрипт запущен не от root, проверку памяти пропускаю"
+fi
+ensure_disk
+
 if [ ! -f .env ]; then
   echo "==> Создаю .env со свежими секретами"
   cp .env.example .env
@@ -37,8 +79,27 @@ docker compose up -d db
 echo "==> Накатываю миграции"
 docker compose run --rm migrate
 
+# На сервере уже может стоять nginx или Traefik под другой сервис. Занимать
+# у них 80 и 443 нельзя, поэтому свой Caddy поднимаем только если порты свободны.
+# Проверка предварительная, последнее слово за реальной попыткой запуска ниже.
+port_busy() {
+  ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"
+}
+
 echo "==> Запускаю панель"
-docker compose up -d panel caddy
+docker compose up -d db panel
+
+USE_CADDY=no
+if port_busy 80 || port_busy 443; then
+  echo "==> Порты 80 или 443 уже заняты - свой Caddy не поднимаю, чтобы не задеть то, что там стоит"
+elif docker compose --profile edge up -d caddy 2>/tmp/caddy-start.err; then
+  USE_CADDY=yes
+  echo "==> Caddy поднят на 80/443"
+else
+  echo "==> Caddy подняться не смог, оставляю панель без него:"
+  sed 's/^/    /' /tmp/caddy-start.err >&2
+  docker compose rm -sf caddy >/dev/null 2>&1 || true
+fi
 
 echo "==> Жду, пока панель ответит"
 for i in $(seq 1 30); do
@@ -57,6 +118,30 @@ echo "Готово."
 echo "Ключ для n8n (заголовок x-api-key):"
 grep '^N8N_API_KEY=' .env | cut -d= -f2
 echo
+if [ "$USE_CADDY" = "no" ]; then
+  cat <<'HINT'
+
+Панель слушает 127.0.0.1:3000. Добавьте её в уже стоящий веб-сервер.
+
+  nginx:
+    server {
+        server_name panel.example.com;
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+
+  Caddy:
+    panel.example.com {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+HINT
+fi
+
 echo "1. Откройте панель в браузере и создайте администратора."
 echo "2. Внесите токены в разделе «Подключения» и нажмите «Проверить»."
-echo "3. Импортируйте воркфлоу из каталога n8n и подставьте адрес панели и ключ выше."
+echo "3. Залейте воркфлоу: python3 ../n8n/import.py --n8n-url ... --panel-url ..."
