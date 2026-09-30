@@ -11,6 +11,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Сборке база не нужна: все страницы рендерятся на запрос.
 ENV NEXT_TELEMETRY_DISABLED=1
+# Потолок кучи, чтобы сборка не выдавила в swap соседей по серверу.
+# Поднять на просторной машине: --build-arg BUILD_MEMORY_MB=4096
+ARG BUILD_MEMORY_MB=1536
+ENV NODE_OPTIONS=--max-old-space-size=${BUILD_MEMORY_MB}
 RUN npm run build
 
 # Отдельный образ для миграций: здесь есть drizzle-kit и исходники,
