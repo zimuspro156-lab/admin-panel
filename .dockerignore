@@ -1,0 +1,15 @@
+# Секреты не должны попадать в образ ни при каких обстоятельствах.
+.env
+.env.*
+deploy/.env
+
+node_modules
+.next
+.git
+.github
+
+# Локальные артефакты
+*.log
+*.tsbuildinfo
+.DS_Store
+.vercel

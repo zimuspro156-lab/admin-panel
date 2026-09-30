@@ -10,9 +10,13 @@ cd admin-panel/deploy
 bash install.sh
 ```
 
-Скрипт поставит Docker, сгенерирует секреты в `deploy/.env`, поднимет Postgres,
-накатит миграции и запустит панель за Caddy. В конце он напечатает
-`N8N_API_KEY` - он понадобится для n8n.
+Скрипт поставит Docker, сгенерирует секреты в `deploy/.env` (права 600),
+поднимет Postgres, накатит миграции отдельным одноразовым контейнером и
+запустит панель за Caddy. В конце он напечатает `N8N_API_KEY` - он понадобится
+для n8n.
+
+Миграции живут в образе `migrate`, который собирается из той же кодовой базы,
+но содержит исходники и drizzle-kit. В рантайм-образе панели их намеренно нет.
 
 Первый запуск идёт по HTTP на IP сервера. Когда появится домен, пропишите его
 в `deploy/.env` и перезапустите Caddy:
@@ -31,8 +35,8 @@ Caddy сам выпустит сертификат Let's Encrypt. Пока па�
 ```bash
 git pull
 cd deploy
-docker compose build panel
-docker compose run --rm --entrypoint sh panel -c 'npx --yes drizzle-kit migrate'
+docker compose build
+docker compose run --rm migrate
 docker compose up -d panel
 ```
 

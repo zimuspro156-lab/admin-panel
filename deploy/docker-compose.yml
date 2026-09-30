@@ -13,12 +13,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-    # Наружу не публикуется: база доступна только панели внутри сети compose.
+    # Наружу порт не публикуется: база видна только сервисам этого compose.
+
+  # Разовая задача, запускается вручную: docker compose run --rm migrate
+  migrate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: migrator
+    profiles: ['tools']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://reviews:${POSTGRES_PASSWORD}@db:5432/reviews?sslmode=disable
 
   panel:
     build:
       context: ..
       dockerfile: Dockerfile
+      target: runner
     restart: unless-stopped
     depends_on:
       db:
