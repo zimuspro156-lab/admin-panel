@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #0f1419;
+  --color-muted: #667085;
+  --color-line: #e4e7ec;
+  --color-surface: #ffffff;
+  --color-canvas: #f6f7f9;
+  --color-wb: #7b2ff7;
+  --color-ozon: #005bff;
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/*
+ * Tailwind v4 не даёт ссылаться через @apply на собственные классы,
+ * поэтому каждая заготовка перечисляет утилиты целиком.
+ */
+@layer components {
+  .card {
+    @apply rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)];
+  }
+
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border border-transparent bg-[var(--color-ink)] text-white hover:bg-black;
+  }
+
+  .btn-ghost {
+    @apply border border-[var(--color-line)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-canvas)];
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-ink)];
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line)] bg-white px-3 py-1.5 text-sm text-[var(--color-muted)] transition hover:border-[var(--color-ink)] hover:text-[var(--color-ink)];
+  }
+
+  .chip-active {
+    @apply border-[var(--color-ink)] bg-[var(--color-ink)] text-white hover:text-white;
+  }
+}
