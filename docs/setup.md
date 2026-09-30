@@ -110,13 +110,27 @@ https://developers.openai.com/api/docs/models
 выгрузку запускать кнопкой «Выгрузить отзывы сейчас» в настройках. n8n нужен,
 чтобы это происходило по расписанию.
 
-1. Создайте одну credential: **Header Auth**, Name `x-api-key`, Value -
-   `N8N_API_KEY`, который напечатал `install.sh`.
-2. Импортируйте [../n8n/01-sync-reviews.json](../n8n/01-sync-reviews.json) и
-   [../n8n/02-flush-answers.json](../n8n/02-flush-answers.json).
-3. В обоих замените `https://ПАНЕЛЬ.example.com` на адрес панели и выберите
-   созданную credential.
-4. Включите оба тумблером Active.
+Проще всего скриптом - он создаст credential, оба воркфлоу и включит их:
+
+```bash
+export N8N_TOKEN='<токен n8n Public API>'
+export PANEL_KEY='<N8N_API_KEY, который напечатал install.sh>'
+
+python3 n8n/import.py \
+  --n8n-url https://n8n.example.com \
+  --panel-url https://panel.example.com
+```
+
+Токен n8n Public API берётся в n8n: Settings → n8n API → Create an API key.
+
+Скрипт только создаёт: существующие воркфлоу он не меняет и не удаляет, а при
+совпадении имён останавливается. Сначала можно посмотреть план с `--dry-run`.
+
+Руками то же самое: создать credential **Header Auth** (Name `x-api-key`,
+Value - `N8N_API_KEY`), импортировать
+[../n8n/01-sync-reviews.json](../n8n/01-sync-reviews.json) и
+[../n8n/02-flush-answers.json](../n8n/02-flush-answers.json), заменить в них
+`https://ПАНЕЛЬ.example.com` на адрес панели и включить тумблером Active.
 
 Это два узла в каждом воркфлоу, на соседние воркфлоу инстанса они не влияют.
 
