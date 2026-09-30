@@ -79,12 +79,41 @@ docker compose up -d db
 echo "==> Накатываю миграции"
 docker compose run --rm migrate
 
-# На сервере уже может стоять nginx или Traefik под другой сервис. Занимать
-# у них 80 и 443 нельзя, поэтому свой Caddy поднимаем только если порты свободны.
-# Проверка предварительная, последнее слово за реальной попыткой запуска ниже.
+# Занят ли порт на хосте. Нужно и для выбора порта панели, и для решения,
+# поднимать ли свой Caddy. Проверка предварительная: последнее слово за
+# реальной попыткой запуска ниже.
 port_busy() {
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"
 }
+
+# Порт 3000 занят на многих серверах. Подбираем свободный и запоминаем его
+# в .env, чтобы между перезапусками он не менялся.
+pick_panel_bind() {
+  local configured host port candidate
+  configured=$(grep -E '^PANEL_BIND=' .env 2>/dev/null | cut -d= -f2-)
+  host=${configured%:*}
+  port=${configured##*:}
+  case "$host" in '' | "$configured") host=127.0.0.1 ;; esac
+  case "$port" in '' | *[!0-9]*) port=3000 ;; esac
+
+  candidate=$port
+  while port_busy "$candidate" && [ "$candidate" -lt 3200 ]; do
+    candidate=$((candidate + 1))
+  done
+
+  if [ "$candidate" != "$port" ]; then
+    echo "    Порт $port занят, панель переезжает на $candidate" >&2
+  fi
+  echo "$host:$candidate"
+}
+
+PANEL_BIND_VALUE=$(pick_panel_bind)
+if grep -qE '^PANEL_BIND=' .env; then
+  sed -i "s|^PANEL_BIND=.*|PANEL_BIND=${PANEL_BIND_VALUE}|" .env
+else
+  echo "PANEL_BIND=${PANEL_BIND_VALUE}" >> .env
+fi
+echo "==> Панель будет слушать ${PANEL_BIND_VALUE}"
 
 echo "==> Запускаю панель"
 docker compose up -d db panel
