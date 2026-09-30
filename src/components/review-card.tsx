@@ -32,12 +32,17 @@ export type ReviewCardData = {
 
 const EDITABLE_STATUSES = new Set(['new', 'failed', 'skipped', 'queued'])
 
+/** Отзыв, на который маркетплейс не примет ответ: форма ответа тут ни к чему. */
+function isDeadEnd(review: ReviewCardData) {
+  return review.status === 'skipped' && Boolean(review.lastError)
+}
+
 export function ReviewCard({ review }: { review: ReviewCardData }) {
   const [text, setText] = useState(review.answerText ?? '')
   const [sendState, sendForm, sendPending] = useActionState(sendAnswerAction, {})
   const [draftState, draftForm, draftPending] = useActionState(sendAnswerAction, {})
 
-  const editable = EDITABLE_STATUSES.has(review.status)
+  const editable = EDITABLE_STATUSES.has(review.status) && !isDeadEnd(review)
   const error = sendState.error ?? draftState.error
 
   return (
@@ -144,6 +149,13 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
       {review.lastError && review.status === 'failed' ? (
         <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
           <p className="text-xs font-medium tracking-wide uppercase">Ошибка отправки</p>
+          <p className="mt-1">{review.lastError}</p>
+        </div>
+      ) : null}
+
+      {review.lastError && review.status === 'skipped' ? (
+        <div className="mt-4 rounded-lg bg-[var(--color-canvas)] p-3 text-sm text-[var(--color-muted)]">
+          <p className="text-xs font-medium tracking-wide uppercase">Ответ невозможен</p>
           <p className="mt-1">{review.lastError}</p>
         </div>
       ) : null}

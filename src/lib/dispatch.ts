@@ -2,7 +2,7 @@ import 'server-only'
 import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLog, reviews } from '@/db/schema'
-import { answerOzonReview } from './mp/ozon'
+import { OZON_EMPTY_REVIEW_NOTE, answerOzonReview, isOzonReviewAnswerable } from './mp/ozon'
 import { answerWbReview } from './mp/wb'
 import { getIntegrations, getSettings } from './settings'
 
@@ -12,6 +12,7 @@ type LeasedRow = {
   external_id: string
   answer_text: string
   answer_source: string | null
+  raw: unknown
 }
 
 /**
@@ -44,7 +45,7 @@ async function lease(limit: number, reviewId?: number): Promise<LeasedRow[]> {
       for update skip locked
       limit ${limit}
     )
-    returning r.id, r.marketplace, r.external_id, r.answer_text, r.answer_source
+    returning r.id, r.marketplace, r.external_id, r.answer_text, r.answer_source, r.raw
   `)
 
   return result.rows
@@ -64,6 +65,8 @@ export type DispatchSummary = {
   attempted: number
   sent: number
   failed: number
+  /** Отзывы, на которые маркетплейс не принимает ответ в принципе. */
+  skipped: number
   errors: string[]
 }
 
@@ -79,10 +82,21 @@ export async function dispatchQueue(options: { limit?: number; reviewId?: number
   const budget = options.reviewId ? limit : Math.min(limit, Math.max(1, await autoBudget()))
   const leased = await lease(budget, options.reviewId)
 
-  const summary: DispatchSummary = { attempted: leased.length, sent: 0, failed: 0, errors: [] }
+  const summary: DispatchSummary = { attempted: leased.length, sent: 0, failed: 0, skipped: 0, errors: [] }
   const now = new Date()
 
   for (const row of leased) {
+    // Ответ на пустой отзыв Ozon отклонит. Не пытаемся и не считаем это ошибкой.
+    if (row.marketplace === 'ozon' && !isOzonReviewAnswerable(row.raw)) {
+      await db.execute(sql`
+        update reviews
+        set status = 'skipped', last_error = ${OZON_EMPTY_REVIEW_NOTE}, updated_at = ${now}
+        where id = ${row.id}
+      `)
+      summary.skipped += 1
+      continue
+    }
+
     let result: { ok: true; externalCommentId: string | null } | { ok: false; error: string }
 
     if (row.marketplace === 'wb') {

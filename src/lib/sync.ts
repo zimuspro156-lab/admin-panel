@@ -4,7 +4,7 @@ import { db } from '@/db'
 import { auditLog, reviews, syncRuns, type Marketplace } from '@/db/schema'
 import { generateDraft } from './ai'
 import { decideAutoReply } from './autoreply'
-import { fetchOzonReviews } from './mp/ozon'
+import { OZON_EMPTY_REVIEW_NOTE, fetchOzonReviews, isOzonReviewAnswerable } from './mp/ozon'
 import type { NormalizedReview } from './mp/types'
 import { fetchWbReviews } from './mp/wb'
 import { getIntegrations, getSettings } from './settings'
@@ -67,16 +67,43 @@ async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
         .update(reviews)
         .set(content)
         .where(and(eq(reviews.marketplace, marketplace), eq(reviews.externalId, review.externalId)))
+
+      // Если ответ на него невозможен, убираем его из работы - в том числе
+      // те, что успели упасть с ошибкой до появления этой проверки.
+      if (marketplace === 'ozon' && !isOzonReviewAnswerable(review.raw)) {
+        await db
+          .update(reviews)
+          .set({ status: 'skipped', lastError: OZON_EMPTY_REVIEW_NOTE, updatedAt: now })
+          .where(
+            and(
+              eq(reviews.marketplace, marketplace),
+              eq(reviews.externalId, review.externalId),
+              inArray(reviews.status, ['new', 'failed']),
+            ),
+          )
+      }
+
       updated += 1
       continue
     }
 
+    // Отзыв, на который маркетплейс всё равно не примет ответ, сразу уходит
+    // в «без ответа»: оператору он не нужен, а черновик для него - деньги на ветер.
+    const answerable = marketplace !== 'ozon' || isOzonReviewAnswerable(review.raw)
+
     const [row] = await db
       .insert(reviews)
-      .values({ marketplace, externalId: review.externalId, status: 'new', ...content })
+      .values({
+        marketplace,
+        externalId: review.externalId,
+        ...content,
+        ...(answerable
+          ? { status: 'new' as const }
+          : { status: 'skipped' as const, lastError: OZON_EMPTY_REVIEW_NOTE }),
+      })
       .returning({ id: reviews.id })
 
-    if (row) created.push(row.id)
+    if (row && answerable) created.push(row.id)
   }
 
   return { created, updated }

@@ -15,6 +15,25 @@ type OzonReview = {
 
 export type OzonCredentials = { clientId: string; apiKey: string }
 
+/** Текст для карточки: почему на этот отзыв нельзя ответить. */
+export const OZON_EMPTY_REVIEW_NOTE =
+  'Ozon не принимает ответы на отзывы без текста, фото и видео - только с оценкой'
+
+/**
+ * Ozon отклоняет комментарий к отзыву без содержимого:
+ * createComment: cannot comment on empty review. Проверяем заранее, чтобы
+ * не тратить запрос к OpenAI и не показывать оператору ошибку там, где
+ * сделать ничего нельзя.
+ */
+export function isOzonReviewAnswerable(raw: unknown): boolean {
+  const review = (raw ?? {}) as { text?: string; photos_amount?: number; videos_amount?: number }
+  return (
+    Boolean(review.text?.trim()) ||
+    (review.photos_amount ?? 0) > 0 ||
+    (review.videos_amount ?? 0) > 0
+  )
+}
+
 function headers({ clientId, apiKey }: OzonCredentials) {
   return {
     'Client-Id': clientId,
