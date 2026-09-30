@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLog, reviews, syncRuns, type Marketplace } from '@/db/schema'
 import { generateDraft } from './ai'
@@ -211,6 +211,22 @@ async function queueDrafted(marketplace: Marketplace) {
   return queued
 }
 
+/**
+ * Переносит в «без ответа» отзывы, которые успели упасть с отказом Ozon
+ * «cannot comment on empty review» до того, как панель научилась его понимать.
+ * Иначе они навсегда остались бы красными карточками, которые оператор
+ * всё равно не может исправить.
+ */
+async function healEmptyReviewFailures() {
+  await db.execute(sql`
+    update reviews
+    set status = 'skipped', last_error = ${OZON_EMPTY_REVIEW_NOTE}, updated_at = now()
+    where marketplace = 'ozon'
+      and status = 'failed'
+      and last_error ilike '%cannot comment on empty review%'
+  `)
+}
+
 async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSync> {
   const base: MarketplaceSync = {
     marketplace,
@@ -240,6 +256,8 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
     await db.insert(syncRuns).values({ marketplace, status: 'error', error: fetched.error })
     return { ...base, error: fetched.error }
   }
+
+  if (marketplace === 'ozon') await healEmptyReviewFailures()
 
   const { created, updated } = await upsert(marketplace, fetched.reviews)
   const drafts = await draftPending(marketplace)

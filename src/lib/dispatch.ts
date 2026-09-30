@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLog, reviews } from '@/db/schema'
 import { OZON_EMPTY_REVIEW_NOTE, answerOzonReview, isOzonReviewAnswerable } from './mp/ozon'
+import type { SendResult } from './mp/types'
 import { answerWbReview } from './mp/wb'
 import { getIntegrations, getSettings } from './settings'
 
@@ -97,7 +98,7 @@ export async function dispatchQueue(options: { limit?: number; reviewId?: number
       continue
     }
 
-    let result: { ok: true; externalCommentId: string | null } | { ok: false; error: string }
+    let result: SendResult
 
     if (row.marketplace === 'wb') {
       result = credentials.wbToken
@@ -118,6 +119,14 @@ export async function dispatchQueue(options: { limit?: number; reviewId?: number
         where id = ${row.id}
       `)
       summary.sent += 1
+    } else if (result.notAnswerable) {
+      // Повторять нечего: убираем отзыв из работы с понятным пояснением.
+      await db.execute(sql`
+        update reviews
+        set status = 'skipped', last_error = ${result.error}, updated_at = ${now}
+        where id = ${row.id}
+      `)
+      summary.skipped += 1
     } else {
       await db.execute(sql`
         update reviews
@@ -129,7 +138,7 @@ export async function dispatchQueue(options: { limit?: number; reviewId?: number
     }
 
     await db.insert(auditLog).values({
-      action: result.ok ? 'answer.sent' : 'answer.failed',
+      action: result.ok ? 'answer.sent' : result.notAnswerable ? 'answer.not_answerable' : 'answer.failed',
       reviewId: row.id,
       meta: {
         marketplace: row.marketplace,

@@ -125,7 +125,16 @@ export async function answerOzonReview(
     }),
   })
 
-  if (!ok) return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
+  if (!ok) {
+    // Точное правило Ozon про «пустой» отзыв со временем меняется, поэтому
+    // опираемся на его собственный отказ, а не только на предварительную
+    // проверку: такой отзыв больше не пойдёт в отправку.
+    const message = JSON.stringify(body ?? {})
+    if (/cannot comment on empty review/i.test(message)) {
+      return { ok: false, error: OZON_EMPTY_REVIEW_NOTE, notAnswerable: true }
+    }
+    return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
+  }
 
   const payload = body as { comment_id?: string } | null
   return { ok: true, externalCommentId: payload?.comment_id ?? null }

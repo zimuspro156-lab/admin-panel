@@ -16,7 +16,13 @@ export type NormalizedReview = {
 }
 
 export type FetchResult = { ok: true; reviews: NormalizedReview[] } | { ok: false; error: string }
-export type SendResult = { ok: true; externalCommentId: string | null } | { ok: false; error: string }
+export type SendResult =
+  | { ok: true; externalCommentId: string | null }
+  /**
+   * notAnswerable - маркетплейс не примет ответ на этот отзыв никогда,
+   * повторять бессмысленно. Это не сбой отправки, а свойство отзыва.
+   */
+  | { ok: false; error: string; notAnswerable?: boolean }
 
 /** Общий таймаут на запрос к маркетплейсу: воркфлоу не должен висеть вечно. */
 export const REQUEST_TIMEOUT_MS = 20_000
