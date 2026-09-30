@@ -23,6 +23,7 @@ import os
 import pathlib
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 WORKFLOW_FILES = ['01-sync-reviews.json', '02-flush-answers.json']
@@ -48,7 +49,7 @@ def ensure_header_safe(label, value):
         raise SystemExit(f'{label} содержит пробелы по краям - уберите их.')
 
 
-def request(url, token, method='GET', payload=None):
+def request(url, token, method='GET', payload=None, allow_http_error=False):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header('X-N8N-API-KEY', token)
@@ -62,9 +63,43 @@ def request(url, token, method='GET', payload=None):
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as error:
         detail = error.read().decode()[:500]
+        if allow_http_error:
+            # Вызывающий разберётся сам: схема credentials отличается между версиями n8n.
+            return {'__httpError': error.code, '__detail': detail}
         raise SystemExit(f'n8n ответил {error.code} на {method} {url}\n  {detail}')
     except urllib.error.URLError as error:
         raise SystemExit(f'Не достучался до n8n по адресу {url}\n  {error.reason}')
+
+
+def create_credential(api, token, panel_key, panel_host):
+    """
+    Создаёт credential с заголовком x-api-key.
+
+    Свежие версии n8n требуют allowedDomains - список хостов, куда этой
+    credential разрешено ходить. Это ограничение полезно само по себе: ключ
+    панели не сможет уйти на посторонний адрес. Версии постарше такого поля
+    не знают, поэтому при отказе повторяем без него.
+    """
+    base = {'name': 'x-api-key', 'value': panel_key}
+
+    for data in ({**base, 'allowedDomains': panel_host}, base):
+        result = request(
+            f'{api}/credentials',
+            token,
+            method='POST',
+            payload={'name': CREDENTIAL_NAME, 'type': 'httpHeaderAuth', 'data': data},
+            allow_http_error=True,
+        )
+
+        if '__httpError' not in result:
+            if 'allowedDomains' in data:
+                print(f'    ограничена доменом: {panel_host}')
+            return result
+
+        if result['__httpError'] != 400:
+            raise SystemExit(f'n8n ответил {result["__httpError"]} при создании credential\n  {result["__detail"]}')
+
+    raise SystemExit(f'n8n не принял credential:\n  {result["__detail"]}')
 
 
 def main():
@@ -120,16 +155,8 @@ def main():
         return
 
     print(f'\n==> Создаю credential «{CREDENTIAL_NAME}»')
-    credential = request(
-        f'{api}/credentials',
-        args.n8n_token,
-        method='POST',
-        payload={
-            'name': CREDENTIAL_NAME,
-            'type': 'httpHeaderAuth',
-            'data': {'name': 'x-api-key', 'value': args.panel_key},
-        },
-    )
+    panel_host = urllib.parse.urlparse(panel_url).hostname or ''
+    credential = create_credential(api, args.n8n_token, args.panel_key, panel_host)
     credential_id = credential.get('id') or credential.get('data', {}).get('id')
     if not credential_id:
         raise SystemExit(f'n8n не вернул id credential: {credential}')
