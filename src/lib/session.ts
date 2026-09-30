@@ -1,5 +1,5 @@
 import 'server-only'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { SignJWT, jwtVerify } from 'jose'
 import { SESSION_COOKIE } from './constants'
 
@@ -36,13 +36,24 @@ export async function decrypt(token?: string): Promise<SessionPayload | null> {
   }
 }
 
+/**
+ * Ставить ли флаг Secure. Ориентируемся на протокол запроса, а не на режим
+ * сборки: по HTTP браузер Secure-куку просто отбросит, и вход будет молча
+ * не работать. Как только панель встанет за HTTPS, флаг появится сам.
+ */
+async function useSecureCookie() {
+  const forwarded = (await headers()).get('x-forwarded-proto') ?? ''
+  // Прокси могут добавлять свой протокол через запятую, нужен самый первый.
+  return forwarded.split(',')[0].trim().toLowerCase() === 'https'
+}
+
 export async function createSession(userId: number) {
   const expiresAt = new Date(Date.now() + MAX_AGE_SECONDS * 1000)
   const token = await encrypt({ userId }, expiresAt)
   const store = await cookies()
   store.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: await useSecureCookie(),
     sameSite: 'lax',
     path: '/',
     expires: expiresAt,
