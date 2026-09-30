@@ -31,6 +31,23 @@ PLACEHOLDER_URL = 'https://ПАНЕЛЬ.example.com'
 PLACEHOLDER_CREDENTIAL = 'REPLACE_PANEL_CREDENTIAL_ID'
 
 
+def ensure_header_safe(label, value):
+    """
+    Заголовки HTTP допускают только latin-1. Кириллица в токене (например,
+    случайно вставленный плейсхолдер) роняла бы urllib трейсбеком на
+    UnicodeEncodeError - непонятно, что именно не так.
+    """
+    try:
+        value.encode('latin-1')
+    except UnicodeEncodeError:
+        raise SystemExit(
+            f'{label} содержит нелатинские символы - похоже, вместо настоящего значения '
+            f'подставился текст-подсказка. Проверьте, что переменная задана верно.'
+        )
+    if value != value.strip():
+        raise SystemExit(f'{label} содержит пробелы по краям - уберите их.')
+
+
 def request(url, token, method='GET', payload=None):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -64,6 +81,9 @@ def main():
         raise SystemExit('Не задан токен n8n: --n8n-token или переменная N8N_TOKEN')
     if not args.panel_key:
         raise SystemExit('Не задан ключ панели: --panel-key или переменная PANEL_KEY')
+
+    ensure_header_safe('Токен n8n', args.n8n_token)
+    ensure_header_safe('Ключ панели', args.panel_key)
 
     base = args.n8n_url.rstrip('/')
     api = f'{base}/api/v1'
