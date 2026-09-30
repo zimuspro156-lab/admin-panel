@@ -51,21 +51,42 @@ function subscriptionHint(status: number) {
     : ''
 }
 
-/** POST /v1/review/list - лимит от 20 до 100 по документации Ozon. */
+const PAGE_SIZE = 100
+
+/**
+ * POST /v1/review/list - все необработанные отзывы. Лимит страницы по
+ * документации Ozon от 20 до 100, дальше идём по курсору last_id, пока
+ * маркетплейс отдаёт has_next.
+ */
 export async function fetchOzonReviews(
   credentials: OzonCredentials,
-  limit = 100,
+  maxPages = 20,
 ): Promise<FetchResult> {
-  const { ok, status, body } = await requestJson(`${BASE}/v1/review/list`, {
-    method: 'POST',
-    headers: headers(credentials),
-    body: JSON.stringify({ limit: Math.min(100, Math.max(20, limit)), sort_dir: 'DESC', status: 'UNPROCESSED' }),
-  })
+  const collected: NormalizedReview[] = []
+  let lastId = ''
 
-  if (!ok) return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
+  for (let page = 0; page < maxPages; page += 1) {
+    const { ok, status, body } = await requestJson(`${BASE}/v1/review/list`, {
+      method: 'POST',
+      headers: headers(credentials),
+      body: JSON.stringify({
+        limit: PAGE_SIZE,
+        sort_dir: 'DESC',
+        status: 'UNPROCESSED',
+        ...(lastId ? { last_id: lastId } : {}),
+      }),
+    })
 
-  const payload = body as { reviews?: OzonReview[] }
-  return { ok: true, reviews: (payload?.reviews ?? []).map(normalize) }
+    if (!ok) return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
+
+    const payload = body as { reviews?: OzonReview[]; has_next?: boolean; last_id?: string }
+    collected.push(...(payload?.reviews ?? []).map(normalize))
+
+    if (!payload?.has_next || !payload?.last_id) break
+    lastId = payload.last_id
+  }
+
+  return { ok: true, reviews: collected }
 }
 
 /** POST /v1/review/comment/create - публичный ответ продавца на отзыв. */

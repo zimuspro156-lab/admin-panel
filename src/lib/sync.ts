@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/db'
 import { auditLog, reviews, syncRuns, type Marketplace } from '@/db/schema'
 import { generateDraft } from './ai'
@@ -21,7 +21,7 @@ export type MarketplaceSync = {
 }
 
 /** Сколько черновиков генерируем за один прогон: защита от счёта за OpenAI. */
-const MAX_DRAFTS_PER_RUN = 50
+const MAX_DRAFTS_PER_RUN = 100
 
 async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
   if (incoming.length === 0) return { created: [] as number[], updated: 0 }
@@ -82,10 +82,13 @@ async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
   return { created, updated }
 }
 
-/** Генерирует черновики для новых отзывов и, если автоответ включён, ставит их в очередь. */
-async function draftAndQueue(newReviewIds: number[]) {
-  if (newReviewIds.length === 0) return { drafted: 0, queued: 0, error: null as string | null }
-
+/**
+ * Генерирует черновики для отзывов, которые их ещё ждут, и, если автоответ
+ * включён, ставит их в очередь. Берём не только созданные в этом прогоне:
+ * иначе отзывы, не попавшие в лимит прошлого раза, остались бы без черновика
+ * навсегда. Так каждый следующий прогон догоняет отставание.
+ */
+async function draftPending(marketplace: Marketplace) {
   const [config, credentials] = await Promise.all([getSettings(), getIntegrations()])
   if (!credentials.openaiApiKey) {
     return { drafted: 0, queued: 0, error: 'Ключ OpenAI не задан в разделе «Подключения»' }
@@ -94,10 +97,19 @@ async function draftAndQueue(newReviewIds: number[]) {
   const targets = await db
     .select()
     .from(reviews)
-    .where(inArray(reviews.id, newReviewIds.slice(0, MAX_DRAFTS_PER_RUN)))
+    .where(
+      and(
+        eq(reviews.marketplace, marketplace),
+        eq(reviews.status, 'new'),
+        isNull(reviews.aiDraft),
+      ),
+    )
+    .orderBy(desc(reviews.mpCreatedAt))
+    .limit(MAX_DRAFTS_PER_RUN)
+
+  if (targets.length === 0) return { drafted: 0, error: null as string | null }
 
   let drafted = 0
-  let queued = 0
   let error: string | null = null
   const now = new Date()
 
@@ -111,8 +123,6 @@ async function draftAndQueue(newReviewIds: number[]) {
     }
 
     drafted += 1
-    const decision = decideAutoReply(result.draft, config)
-
     await db
       .update(reviews)
       .set({
@@ -120,24 +130,58 @@ async function draftAndQueue(newReviewIds: number[]) {
         aiModel: result.model,
         aiGeneratedAt: now,
         updatedAt: now,
-        ...(decision.auto
-          ? {
-              status: 'queued' as const,
-              answerText: decision.answerText,
-              answerSource: 'auto' as const,
-            }
-          : {}),
       })
       .where(and(eq(reviews.id, review.id), eq(reviews.status, 'new')))
+  }
 
-    if (decision.auto) queued += 1
+  return { drafted, error }
+}
+
+/**
+ * Ставит в очередь всё, что готово к автоответу. Отдельный шаг от генерации:
+ * иначе включение автоответа не подхватывало бы отзывы, черновики для которых
+ * сделали раньше, и они висели бы необработанными.
+ */
+async function queueDrafted(marketplace: Marketplace) {
+  const config = await getSettings()
+
+  const pending = await db
+    .select({ id: reviews.id, aiDraft: reviews.aiDraft })
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.marketplace, marketplace),
+        eq(reviews.status, 'new'),
+        isNotNull(reviews.aiDraft),
+      ),
+    )
+
+  let queued = 0
+  const now = new Date()
+
+  for (const review of pending) {
+    const decision = decideAutoReply(review.aiDraft, config)
+    if (!decision.auto) continue
+
+    const updated = await db
+      .update(reviews)
+      .set({
+        status: 'queued',
+        answerText: decision.answerText,
+        answerSource: 'auto',
+        updatedAt: now,
+      })
+      .where(and(eq(reviews.id, review.id), eq(reviews.status, 'new')))
+      .returning({ id: reviews.id })
+
+    if (updated.length > 0) queued += 1
   }
 
   if (queued > 0) {
-    await db.insert(auditLog).values({ action: 'autoreply.queued', meta: { count: queued } })
+    await db.insert(auditLog).values({ action: 'autoreply.queued', meta: { marketplace, count: queued } })
   }
 
-  return { drafted, queued, error }
+  return queued
 }
 
 async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSync> {
@@ -171,7 +215,8 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
   }
 
   const { created, updated } = await upsert(marketplace, fetched.reviews)
-  const drafts = await draftAndQueue(created)
+  const drafts = await draftPending(marketplace)
+  const queued = await queueDrafted(marketplace)
 
   await db.insert(syncRuns).values({
     marketplace,
@@ -188,7 +233,7 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
     created: created.length,
     updated,
     drafted: drafts.drafted,
-    queued: drafts.queued,
+    queued,
     error: drafts.error,
   }
 }

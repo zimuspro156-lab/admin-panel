@@ -44,27 +44,44 @@ function normalize(feedback: WbFeedback): NormalizedReview {
   }
 }
 
-/** GET /api/v1/feedbacks - неотвеченные отзывы, свежие сверху. */
-export async function fetchWbReviews(token: string, take = 100): Promise<FetchResult> {
-  const url = new URL('/api/v1/feedbacks', BASE)
-  url.searchParams.set('isAnswered', 'false')
-  url.searchParams.set('take', String(take))
-  url.searchParams.set('skip', '0')
-  url.searchParams.set('order', 'dateDesc')
+const PAGE_SIZE = 100
 
-  const { ok, status, body } = await requestJson(url.toString(), {
-    method: 'GET',
-    headers: { Authorization: token },
-  })
+/**
+ * GET /api/v1/feedbacks - все неотвеченные отзывы, свежие сверху.
+ * Листаем через skip, пока страница не окажется неполной: без этого при
+ * очереди больше сотни каждый прогон тянул бы одну и ту же первую страницу,
+ * а остальные отзывы не приезжали бы никогда.
+ */
+export async function fetchWbReviews(token: string, maxPages = 20): Promise<FetchResult> {
+  const collected: NormalizedReview[] = []
 
-  if (!ok) return { ok: false, error: describeError('Wildberries', status, body) }
+  for (let page = 0; page < maxPages; page += 1) {
+    const url = new URL('/api/v1/feedbacks', BASE)
+    url.searchParams.set('isAnswered', 'false')
+    url.searchParams.set('take', String(PAGE_SIZE))
+    url.searchParams.set('skip', String(page * PAGE_SIZE))
+    url.searchParams.set('order', 'dateDesc')
 
-  const payload = body as { error?: boolean; errorText?: string; data?: { feedbacks?: WbFeedback[] } }
-  if (payload?.error) {
-    return { ok: false, error: `Wildberries: ${payload.errorText || 'ошибка API'}` }
+    const { ok, status, body } = await requestJson(url.toString(), {
+      method: 'GET',
+      headers: { Authorization: token },
+    })
+
+    if (!ok) return { ok: false, error: describeError('Wildberries', status, body) }
+
+    const payload = body as { error?: boolean; errorText?: string; data?: { feedbacks?: WbFeedback[] } }
+    if (payload?.error) {
+      return { ok: false, error: `Wildberries: ${payload.errorText || 'ошибка API'}` }
+    }
+
+    const feedbacks = payload?.data?.feedbacks ?? []
+    collected.push(...feedbacks.map(normalize))
+
+    // Неполная страница означает, что дальше ничего нет.
+    if (feedbacks.length < PAGE_SIZE) break
   }
 
-  return { ok: true, reviews: (payload?.data?.feedbacks ?? []).map(normalize) }
+  return { ok: true, reviews: collected }
 }
 
 /** POST /api/v1/feedbacks/answer - тело {id, text} по спецификации WB. */
