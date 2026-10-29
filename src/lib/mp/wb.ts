@@ -1,6 +1,7 @@
 import 'server-only'
 import type { FetchResult, NormalizedReview, SendResult } from './types'
 import { describeError, requestJson } from './types'
+import { describeWbToken } from './wb-token'
 
 const BASE = process.env.WB_API_BASE || 'https://feedbacks-api.wildberries.ru'
 
@@ -67,7 +68,15 @@ export async function fetchWbReviews(token: string, maxPages = 20): Promise<Fetc
       headers: { Authorization: token },
     })
 
-    if (!ok) return { ok: false, error: describeError('Wildberries', status, body) }
+    if (!ok) {
+      const hint =
+        status === 401
+          ? `. Токен не принят: ${describeWbToken(token)}`
+          : status === 403
+            ? '. Проверьте, что у токена выбрана категория «Вопросы и отзывы»'
+            : ''
+      return { ok: false, error: describeError('Wildberries', status, body) + hint }
+    }
 
     const payload = body as { error?: boolean; errorText?: string; data?: { feedbacks?: WbFeedback[] } }
     if (payload?.error) {
@@ -115,8 +124,14 @@ export async function checkWbToken(token: string): Promise<{ ok: true; detail: s
     headers: { Authorization: token },
   })
 
-  if (!ok) return { ok: false, error: describeError('Wildberries', status, body) }
+  // Разбор самого токена помогает там, где маркетплейс отвечает голым 401.
+  const tokenNote = describeWbToken(token)
+
+  if (!ok) {
+    const hint = status === 401 ? ' Токен не принят. ' : ' '
+    return { ok: false, error: `${describeError('Wildberries', status, body)}.${hint}Про токен: ${tokenNote}` }
+  }
 
   const payload = body as { data?: { countUnanswered?: number } }
-  return { ok: true, detail: `неотвеченных отзывов: ${payload?.data?.countUnanswered ?? 0}` }
+  return { ok: true, detail: `неотвеченных отзывов: ${payload?.data?.countUnanswered ?? 0}. Токен: ${tokenNote}` }
 }

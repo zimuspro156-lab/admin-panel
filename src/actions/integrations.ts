@@ -13,11 +13,31 @@ import { checkWbToken } from '@/lib/mp/wb'
 import { getIntegrations, getSettings } from '@/lib/settings'
 import type { FormState } from './auth'
 
+/**
+ * Ключи и токены - это всегда одна непрерывная строка. Переносы и пробелы
+ * попадают в них при копировании из кабинета, а маркетплейс потом отвечает
+ * голым 401, по которому причину не угадать. Чистим на входе.
+ */
+const credential = (max: number, label: string) =>
+  z
+    .string()
+    .transform((value) => value.replace(/\s+/g, '').replace(/^Bearer/i, ''))
+    .pipe(
+      z
+        .string()
+        .max(max)
+        // Заголовки HTTP допускают только latin-1: кириллица в ключе уронила бы
+        // запрос к маркетплейсу вместо понятного отказа.
+        .refine((value) => /^[\x20-\x7e]*$/.test(value), {
+          message: `${label}: в значении есть недопустимые символы. Похоже, скопирован не ключ, а текст`,
+        }),
+    )
+
 const schema = z.object({
-  wbToken: z.string().trim().max(4000),
-  ozonClientId: z.string().trim().max(100),
-  ozonApiKey: z.string().trim().max(500),
-  openaiApiKey: z.string().trim().max(500),
+  wbToken: credential(4000, 'Токен Wildberries'),
+  ozonClientId: credential(100, 'Client-Id Ozon'),
+  ozonApiKey: credential(500, 'Api-Key Ozon'),
+  openaiApiKey: credential(500, 'Ключ OpenAI'),
 })
 
 /**

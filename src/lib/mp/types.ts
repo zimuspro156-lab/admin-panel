@@ -35,7 +35,26 @@ export async function requestJson(
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' })
+    let response: Response
+    try {
+      response = await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' })
+    } catch (cause) {
+      // Сюда попадают сетевые сбои и непригодные заголовки (например, ключ,
+      // сохранённый до появления проверки символов). Падать нельзя: ручку
+      // зовёт n8n, и ей нужен понятный ответ.
+      const message = cause instanceof Error ? cause.message : String(cause)
+      const invalidHeader = /header/i.test(message)
+      return {
+        ok: false,
+        status: 0,
+        body: {
+          message: invalidHeader
+            ? 'не удалось отправить запрос: в ключе есть недопустимые символы, задайте его заново'
+            : `не удалось соединиться: ${message}`,
+        },
+      }
+    }
+
     const raw = await response.text()
 
     let body: unknown = null
