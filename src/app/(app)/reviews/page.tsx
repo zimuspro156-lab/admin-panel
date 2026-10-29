@@ -93,8 +93,24 @@ export default async function ReviewsPage({ searchParams }: PageProps) {
 
       <div className="space-y-4">
         {cards.length === 0 ? (
-          <div className="card p-8 text-center text-sm text-[var(--color-muted)]">
-            Здесь пусто. Отзывы появятся после первого прогона воркфлоу n8n.
+          <div className="card space-y-2 p-8 text-center text-sm text-[var(--color-muted)]">
+            {counters.total === 0 ? (
+              <p>
+                Отзывов пока нет. Нажмите «Выгрузить отзывы сейчас» в настройках или дождитесь
+                ближайшего прогона по расписанию.
+              </p>
+            ) : (
+              <>
+                {/* Пустая выборка при непустой базе почти всегда означает фильтр, а не отсутствие отзывов. */}
+                <p>
+                  Под выбранные фильтры не попал ни один отзыв. Всего в панели {counters.total}{' '}
+                  {plural(counters.total, 'отзыв', 'отзыва', 'отзывов')}.
+                </p>
+                <Link href="/reviews" className="inline-block underline">
+                  Сбросить фильтры
+                </Link>
+              </>
+            )}
           </div>
         ) : (
           cards.map((review) => <ReviewCard key={review.id} review={review} />)
