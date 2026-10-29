@@ -7,6 +7,7 @@ const BASE = process.env.WB_API_BASE || 'https://feedbacks-api.wildberries.ru'
 
 type WbFeedback = {
   id?: string
+  answer?: { text?: string; state?: string } | null
   text?: string
   pros?: string
   cons?: string
@@ -28,6 +29,8 @@ function normalize(feedback: WbFeedback): NormalizedReview {
 
   return {
     externalId: String(feedback.id),
+    alreadyAnswered: Boolean(feedback.answer?.text),
+    existingAnswer: feedback.answer?.text || null,
     rating: feedback.productValuation ?? null,
     text: feedback.text || null,
     pros: feedback.pros || null,
@@ -53,12 +56,16 @@ const PAGE_SIZE = 100
  * очереди больше сотни каждый прогон тянул бы одну и ту же первую страницу,
  * а остальные отзывы не приезжали бы никогда.
  */
-export async function fetchWbReviews(token: string, maxPages = 20): Promise<FetchResult> {
+export async function fetchWbReviews(
+  token: string,
+  options: { answered?: boolean; maxPages?: number } = {},
+): Promise<FetchResult> {
+  const { answered = false, maxPages = 20 } = options
   const collected: NormalizedReview[] = []
 
   for (let page = 0; page < maxPages; page += 1) {
     const url = new URL('/api/v1/feedbacks', BASE)
-    url.searchParams.set('isAnswered', 'false')
+    url.searchParams.set('isAnswered', String(answered))
     url.searchParams.set('take', String(PAGE_SIZE))
     url.searchParams.set('skip', String(page * PAGE_SIZE))
     url.searchParams.set('order', 'dateDesc')
@@ -87,6 +94,41 @@ export async function fetchWbReviews(token: string, maxPages = 20): Promise<Fetc
     collected.push(...feedbacks.map(normalize))
 
     // Неполная страница означает, что дальше ничего нет.
+    if (feedbacks.length < PAGE_SIZE) break
+  }
+
+  return { ok: true, reviews: collected }
+}
+
+/**
+ * GET /api/v1/feedbacks/archive - отзывы, уехавшие в архив. Нужен для полной
+ * истории: основной метод их уже не отдаёт ни с isAnswered=true, ни с false.
+ */
+export async function fetchWbArchive(token: string, maxPages = 50): Promise<FetchResult> {
+  const collected: NormalizedReview[] = []
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const url = new URL('/api/v1/feedbacks/archive', BASE)
+    url.searchParams.set('take', String(PAGE_SIZE))
+    url.searchParams.set('skip', String(page * PAGE_SIZE))
+    url.searchParams.set('order', 'dateDesc')
+
+    const { ok, status, body } = await requestJson(url.toString(), {
+      method: 'GET',
+      headers: { Authorization: token },
+    })
+
+    if (!ok) return { ok: false, error: describeError('Wildberries (архив)', status, body) }
+
+    const payload = body as { error?: boolean; errorText?: string; data?: { feedbacks?: WbFeedback[] } }
+    if (payload?.error) {
+      return { ok: false, error: `Wildberries (архив): ${payload.errorText || 'ошибка API'}` }
+    }
+
+    const feedbacks = payload?.data?.feedbacks ?? []
+    // Архив - это уже отработанные отзывы, в очередь они не попадают.
+    collected.push(...feedbacks.map((feedback) => ({ ...normalize(feedback), alreadyAnswered: true })))
+
     if (feedbacks.length < PAGE_SIZE) break
   }
 

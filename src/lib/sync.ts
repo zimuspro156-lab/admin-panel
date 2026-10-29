@@ -5,8 +5,9 @@ import { auditLog, reviews, syncRuns, type Marketplace } from '@/db/schema'
 import { generateDraft } from './ai'
 import { decideAutoReply } from './autoreply'
 import { OZON_EMPTY_REVIEW_NOTE, fetchOzonReviews, isOzonReviewAnswerable } from './mp/ozon'
+import { fetchWbArchive, fetchWbReviews } from './mp/wb'
 import type { NormalizedReview } from './mp/types'
-import { fetchWbReviews } from './mp/wb'
+
 import { getIntegrations, getSettings } from './settings'
 
 export type MarketplaceSync = {
@@ -24,7 +25,7 @@ export type MarketplaceSync = {
 const MAX_DRAFTS_PER_RUN = 100
 
 async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
-  if (incoming.length === 0) return { created: [] as number[], updated: 0 }
+  if (incoming.length === 0) return { created: [] as number[], inserted: 0, updated: 0 }
 
   const known = await db
     .select({ externalId: reviews.externalId })
@@ -40,7 +41,10 @@ async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
     )
 
   const knownIds = new Set(known.map((row) => row.externalId))
+  /** Новые отзывы, которым нужен черновик. */
   const created: number[] = []
+  /** Все новые строки, включая уже отвеченные на маркетплейсе. */
+  let inserted = 0
   let updated = 0
   const now = new Date()
 
@@ -91,22 +95,31 @@ async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
     // в «без ответа»: оператору он не нужен, а черновик для него - деньги на ветер.
     const answerable = marketplace !== 'ozon' || isOzonReviewAnswerable(review.raw)
 
+    let initial: Record<string, unknown>
+    if (review.alreadyAnswered) {
+      // История: ответ уже дан на маркетплейсе, в работу отзыв не берём
+      // и черновик не генерируем.
+      initial = {
+        status: 'sent' as const,
+        answerText: review.existingAnswer ?? null,
+        answerSource: 'imported' as const,
+      }
+    } else if (answerable) {
+      initial = { status: 'new' as const }
+    } else {
+      initial = { status: 'skipped' as const, lastError: OZON_EMPTY_REVIEW_NOTE }
+    }
+
     const [row] = await db
       .insert(reviews)
-      .values({
-        marketplace,
-        externalId: review.externalId,
-        ...content,
-        ...(answerable
-          ? { status: 'new' as const }
-          : { status: 'skipped' as const, lastError: OZON_EMPTY_REVIEW_NOTE }),
-      })
+      .values({ marketplace, externalId: review.externalId, ...content, ...initial })
       .returning({ id: reviews.id })
 
-    if (row && answerable) created.push(row.id)
+    if (row) inserted += 1
+    if (row && answerable && !review.alreadyAnswered) created.push(row.id)
   }
 
-  return { created, updated }
+  return { created, inserted, updated }
 }
 
 /**
@@ -281,6 +294,73 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
     queued,
     error: drafts.error,
   }
+}
+
+export type HistoryImport = {
+  marketplace: Marketplace
+  ok: boolean
+  fetched: number
+  created: number
+  error: string | null
+}
+
+/**
+ * Разовая загрузка истории: тянет и уже отвеченные отзывы, включая архив WB.
+ * Отдельно от часовой выгрузки намеренно - перебирать весь архив каждый час
+ * незачем, а объём там на порядки больше рабочей очереди.
+ */
+export async function importHistory(): Promise<HistoryImport[]> {
+  const credentials = await getIntegrations()
+  const results: HistoryImport[] = []
+
+  const wb: HistoryImport = { marketplace: 'wb', ok: false, fetched: 0, created: 0, error: null }
+  if (!credentials.wbToken) {
+    wb.error = 'Токен Wildberries не задан в разделе «Подключения»'
+  } else {
+    const parts = await Promise.all([
+      fetchWbReviews(credentials.wbToken, { answered: true, maxPages: 50 }),
+      fetchWbArchive(credentials.wbToken, 50),
+    ])
+    const failed = parts.find((part) => !part.ok)
+    if (failed && !failed.ok) {
+      wb.error = failed.error
+    } else {
+      const all = parts.flatMap((part) => (part.ok ? part.reviews : []))
+      const { inserted } = await upsert('wb', all)
+      wb.ok = true
+      wb.fetched = all.length
+      wb.created = inserted
+    }
+  }
+  results.push(wb)
+
+  const ozon: HistoryImport = { marketplace: 'ozon', ok: false, fetched: 0, created: 0, error: null }
+  if (!credentials.ozon) {
+    ozon.error = 'Ключи Ozon не заданы в разделе «Подключения»'
+  } else {
+    const fetched = await fetchOzonReviews(credentials.ozon, { status: 'ALL', maxPages: 50 })
+    if (!fetched.ok) {
+      ozon.error = fetched.error
+    } else {
+      const { inserted } = await upsert('ozon', fetched.reviews)
+      ozon.ok = true
+      ozon.fetched = fetched.reviews.length
+      ozon.created = inserted
+    }
+  }
+  results.push(ozon)
+
+  for (const result of results) {
+    await db.insert(syncRuns).values({
+      marketplace: result.marketplace,
+      fetched: result.fetched,
+      created: result.created,
+      status: result.error ? 'error' : 'ok',
+      error: result.error,
+    })
+  }
+
+  return results
 }
 
 /** Полный прогон: площадки независимы, падение одной не мешает другой. */

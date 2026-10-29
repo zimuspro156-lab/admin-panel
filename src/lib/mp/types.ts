@@ -1,6 +1,10 @@
 /** Общий вид отзыва, к которому приводятся обе площадки. */
 export type NormalizedReview = {
   externalId: string
+  /** Отзыв уже отвечен на маркетплейсе: в работу его брать не нужно. */
+  alreadyAnswered?: boolean
+  /** Текст ответа, если маркетплейс его отдаёт. */
+  existingAnswer?: string | null
   rating: number | null
   text: string | null
   pros: string | null

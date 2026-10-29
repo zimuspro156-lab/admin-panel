@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { runSyncAction, updateSettingsAction } from '@/actions/settings'
+import { importHistoryAction, runSyncAction, updateSettingsAction } from '@/actions/settings'
 import type { Settings } from '@/db/schema'
 
 export function SettingsForm({ settings }: { settings: Settings }) {
@@ -93,6 +93,20 @@ export function RunSyncForm() {
     <form action={formAction} className="flex flex-wrap items-center gap-3">
       <button type="submit" className="btn-ghost text-sm" disabled={pending}>
         {pending ? 'Забираем отзывы...' : 'Выгрузить отзывы сейчас'}
+      </button>
+      {state.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
+      {state.message ? <p className="text-sm text-emerald-700">{state.message}</p> : null}
+    </form>
+  )
+}
+
+export function ImportHistoryForm() {
+  const [state, formAction, pending] = useActionState(importHistoryAction, {})
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <button type="submit" className="btn-ghost text-sm" disabled={pending}>
+        {pending ? 'Загружаем историю, это небыстро...' : 'Загрузить всю историю отзывов'}
       </button>
       {state.error ? <p className="text-sm text-red-700">{state.error}</p> : null}
       {state.message ? <p className="text-sm text-emerald-700">{state.message}</p> : null}

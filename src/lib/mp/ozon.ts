@@ -47,6 +47,9 @@ function normalize(review: OzonReview): NormalizedReview {
 
   return {
     externalId: String(review.id),
+    // PROCESSED означает, что продавец уже закрыл отзыв на стороне Ozon.
+    alreadyAnswered: review.status === 'PROCESSED',
+    existingAnswer: null,
     rating: review.rating ?? null,
     text: review.text || null,
     // «Достоинства» и «Недостатки» Ozon в новых отзывах не отдаёт.
@@ -79,8 +82,9 @@ const PAGE_SIZE = 100
  */
 export async function fetchOzonReviews(
   credentials: OzonCredentials,
-  maxPages = 20,
+  options: { status?: 'UNPROCESSED' | 'ALL'; maxPages?: number } = {},
 ): Promise<FetchResult> {
+  const { status: reviewStatus = 'UNPROCESSED', maxPages = 20 } = options
   const collected: NormalizedReview[] = []
   let lastId = ''
 
@@ -91,7 +95,7 @@ export async function fetchOzonReviews(
       body: JSON.stringify({
         limit: PAGE_SIZE,
         sort_dir: 'DESC',
-        status: 'UNPROCESSED',
+        status: reviewStatus,
         ...(lastId ? { last_id: lastId } : {}),
       }),
     })

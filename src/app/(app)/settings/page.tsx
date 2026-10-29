@@ -1,4 +1,4 @@
-import { RunSyncForm, SettingsForm } from '@/components/settings-form'
+import { ImportHistoryForm, RunSyncForm, SettingsForm } from '@/components/settings-form'
 import { formatDateTime } from '@/lib/format'
 import { requireRole } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
@@ -26,6 +26,17 @@ export default async function SettingsPage() {
           Обычно отзывы забирает n8n раз в час. Эта кнопка делает то же самое прямо сейчас.
         </p>
         <RunSyncForm />
+      </div>
+
+      <div className="card p-4">
+        <h2 className="mb-2 font-medium">История отзывов</h2>
+        <p className="mb-3 text-sm text-[var(--color-muted)]">
+          Обычная выгрузка забирает только неотвеченные отзывы - это рабочая очередь. Чтобы увидеть
+          в панели всё, что было раньше, включая уже отвеченное и архив Wildberries, запустите
+          загрузку истории. Такие отзывы приходят со статусом «Отвечен», черновики для них не
+          генерируются и денег за ИИ не стоят. Достаточно сделать это один раз.
+        </p>
+        <ImportHistoryForm />
       </div>
     </div>
   )

@@ -115,9 +115,16 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
       {review.status === 'sent' ? (
         <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm">
           <p className="mb-1 text-xs font-medium tracking-wide text-emerald-700 uppercase">
-            Ответ отправлен {review.sentAtLabel ? `· ${review.sentAtLabel}` : ''}
+            {review.answerSource === 'imported' ? 'Отвечен ранее' : 'Ответ отправлен'}
+            {review.sentAtLabel ? ` · ${review.sentAtLabel}` : ''}
           </p>
-          <p className="whitespace-pre-line text-emerald-900">{review.answerText}</p>
+          {review.answerText ? (
+            <p className="whitespace-pre-line text-emerald-900">{review.answerText}</p>
+          ) : (
+            <p className="text-emerald-900">
+              Ответ оставлен на маркетплейсе - его текст площадка не отдаёт.
+            </p>
+          )}
         </div>
       ) : null}
 

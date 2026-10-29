@@ -7,7 +7,7 @@ import { db } from '@/db'
 import { auditLog, settings } from '@/db/schema'
 import { requireRole } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
-import { syncAll } from '@/lib/sync'
+import { importHistory, syncAll } from '@/lib/sync'
 import type { FormState } from './auth'
 
 const settingsSchema = z.object({
@@ -63,4 +63,27 @@ export async function runSyncAction(_prev: FormState, _formData: FormData): Prom
 
   const total = results.reduce((sum, result) => sum + result.created, 0)
   return { ok: true, message: `Готово. Новых отзывов: ${total}` }
+}
+
+/**
+ * Разовая загрузка истории, включая уже отвеченные отзывы и архив WB.
+ * Может идти минутами: объём истории на порядки больше рабочей очереди.
+ */
+export async function importHistoryAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  await requireRole('admin')
+
+  const results = await importHistory()
+  const failed = results.filter((result) => !result.ok)
+
+  revalidatePath('/reviews')
+
+  if (failed.length === results.length) {
+    return { error: failed.map((result) => `${result.marketplace}: ${result.error}`).join('; ') }
+  }
+
+  const added = results.reduce((sum, result) => sum + result.created, 0)
+  const seen = results.reduce((sum, result) => sum + result.fetched, 0)
+  const warning = failed.length > 0 ? ` Не удалось: ${failed.map((r) => `${r.marketplace} (${r.error})`).join(', ')}` : ''
+
+  return { ok: true, message: `Просмотрено ${seen}, добавлено новых ${added}.${warning}` }
 }
