@@ -172,30 +172,41 @@ echo "Ключ для n8n (заголовок x-api-key):"
 grep '^N8N_API_KEY=' .env | cut -d= -f2
 echo
 if [ "$USE_CADDY" = "no" ]; then
-  cat <<'HINT'
+  # Адрес зависит от того, в одной ли сети панель с прокси.
+  if grep -qE '^EDGE_NETWORK=.+' .env; then
+    UPSTREAM="mp-reviews-panel-1:3000"
+    echo
+    echo "Панель подключена к сети $(grep -E '^EDGE_NETWORK=' .env | cut -d= -f2-)."
+    echo "Ваш прокси обращается к ней по имени контейнера."
+  else
+    UPSTREAM="${PANEL_BIND_VALUE}"
+    echo
+    echo "Панель слушает ${PANEL_BIND_VALUE}."
+    echo
+    echo "  Если ваш прокси работает в Docker, до хостового 127.0.0.1 он не достучится."
+    echo "  Тогда укажите в deploy/.env имя его сети (docker network ls), например:"
+    echo "      EDGE_NETWORK=n8n_default"
+    echo "  и запустите install.sh заново."
+  fi
 
-Панель слушает локально. Добавьте её в уже стоящий веб-сервер.
+  cat <<HINT
 
-  Если ваш прокси работает в Docker, до хостового 127.0.0.1 он не достучится.
-  Тогда укажите в deploy/.env имя его сети (docker network ls), например:
-      EDGE_NETWORK=n8n_default
-  и запустите install.sh заново. Панель встанет в ту же сеть, и адресом для
-  прокси станет mp-reviews-panel-1:3000
+Добавьте панель в уже стоящий веб-сервер.
 
   nginx:
     server {
         server_name panel.example.com;
         location / {
-            proxy_pass http://127.0.0.1:3000;
-            proxy_set_header Host $host;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_pass http://${UPSTREAM};
+            proxy_set_header Host \$host;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
         }
     }
 
   Caddy:
     panel.example.com {
-        reverse_proxy 127.0.0.1:3000
+        reverse_proxy ${UPSTREAM}
     }
 
 HINT
