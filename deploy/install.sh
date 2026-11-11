@@ -110,6 +110,12 @@ port_busy() {
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"
 }
 
+# Этот порт опубликован нашим же контейнером панели?
+ours() {
+  docker ps --filter 'name=mp-reviews-panel' --format '{{.Ports}}' 2>/dev/null \
+    | grep -qE "[:.]$1->"
+}
+
 # Порт 3000 занят на многих серверах. Подбираем свободный и запоминаем его
 # в .env, чтобы между перезапусками он не менялся.
 pick_panel_bind() {
@@ -121,7 +127,10 @@ pick_panel_bind() {
   case "$port" in '' | *[!0-9]*) port=3000 ;; esac
 
   candidate=$port
-  while port_busy "$candidate" && [ "$candidate" -lt 3200 ]; do
+  # Порт, который держит сама панель с прошлого запуска, занятым не считаем:
+  # иначе каждый повторный install.sh сдвигал бы её на соседний, ломая
+  # настройки прокси и n8n.
+  while port_busy "$candidate" && ! ours "$candidate" && [ "$candidate" -lt 3200 ]; do
     candidate=$((candidate + 1))
   done
 
