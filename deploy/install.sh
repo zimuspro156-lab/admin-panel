@@ -15,6 +15,15 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+# Когда панель подключается к сети чужого прокси, подмешиваем файл-дополнение.
+compose() {
+  if grep -qE '^EDGE_NETWORK=.+' .env 2>/dev/null; then
+    docker compose -f docker-compose.yml -f docker-compose.proxy.yml "$@"
+  else
+    docker compose "$@"
+  fi
+}
+
 # Сборка Next.js - самый прожорливый шаг: на 2 ГБ без подкачки она падает с
 # OOM посреди процесса, и это выглядит как непонятная ошибка сборки.
 ensure_memory() {
@@ -71,13 +80,13 @@ else
 fi
 
 echo "==> Собираю образы (первый раз это несколько минут)"
-docker compose build
+compose build
 
 echo "==> Поднимаю базу"
-docker compose up -d db
+compose up -d db
 
 echo "==> Накатываю миграции"
-docker compose run --rm migrate
+compose run --rm migrate
 
 # Занят ли порт на хосте. Нужно и для выбора порта панели, и для решения,
 # поднимать ли свой Caddy. Проверка предварительная: последнее слово за
@@ -116,23 +125,23 @@ fi
 echo "==> Панель будет слушать ${PANEL_BIND_VALUE}"
 
 echo "==> Запускаю панель"
-docker compose up -d db panel
+compose up -d db panel
 
 USE_CADDY=no
 if port_busy 80 || port_busy 443; then
   echo "==> Порты 80 или 443 уже заняты - свой Caddy не поднимаю, чтобы не задеть то, что там стоит"
-elif docker compose --profile edge up -d caddy 2>/tmp/caddy-start.err; then
+elif compose --profile edge up -d caddy 2>/tmp/caddy-start.err; then
   USE_CADDY=yes
   echo "==> Caddy поднят на 80/443"
 else
   echo "==> Caddy подняться не смог, оставляю панель без него:"
   sed 's/^/    /' /tmp/caddy-start.err >&2
-  docker compose rm -sf caddy >/dev/null 2>&1 || true
+  compose rm -sf caddy >/dev/null 2>&1 || true
 fi
 
 echo "==> Жду, пока панель ответит"
 for i in $(seq 1 30); do
-  if docker compose exec -T panel wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
+  if compose exec -T panel wget -qO- http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
     echo "    панель отвечает"
     break
   fi
@@ -150,7 +159,13 @@ echo
 if [ "$USE_CADDY" = "no" ]; then
   cat <<'HINT'
 
-Панель слушает 127.0.0.1:3000. Добавьте её в уже стоящий веб-сервер.
+Панель слушает локально. Добавьте её в уже стоящий веб-сервер.
+
+  Если ваш прокси работает в Docker, до хостового 127.0.0.1 он не достучится.
+  Тогда укажите в deploy/.env имя его сети (docker network ls), например:
+      EDGE_NETWORK=n8n_default
+  и запустите install.sh заново. Панель встанет в ту же сеть, и адресом для
+  прокси станет mp-reviews-panel-1:3000
 
   nginx:
     server {
