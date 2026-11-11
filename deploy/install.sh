@@ -67,17 +67,32 @@ fi
 ensure_disk
 
 if [ ! -f .env ]; then
-  echo "==> Создаю .env со свежими секретами"
+  echo "==> Создаю .env"
   cp .env.example .env
-  sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env
-  sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$(openssl rand -base64 48 | tr -d '\n')|" .env
-  sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')|" .env
-  sed -i "s|^N8N_API_KEY=.*|N8N_API_KEY=$(openssl rand -hex 32)|" .env
-  chmod 600 .env
-  echo "    Секреты сгенерированы в deploy/.env. Домен правится там же, в PANEL_DOMAIN."
-else
-  echo "==> .env уже есть, секреты не трогаю"
 fi
+chmod 600 .env
+
+# Дозаполняем только то, чего не хватает: уже заданные значения не трогаем.
+# Раньше файл пропускался целиком, и .env с одной строкой оставлял сборку
+# без секретов - с непонятной ошибкой интерполяции.
+ensure_secret() {
+  local key=$1 value=$2
+  if grep -qE "^${key}=.+" .env; then
+    return
+  fi
+  if grep -qE "^${key}=" .env; then
+    sed -i "s|^${key}=.*|${key}=${value}|" .env
+  else
+    printf '%s=%s\n' "$key" "$value" >> .env
+  fi
+  echo "    сгенерирован ${key}"
+}
+
+echo "==> Проверяю секреты в .env"
+ensure_secret POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+ensure_secret SESSION_SECRET "$(openssl rand -base64 48 | tr -d '\n')"
+ensure_secret ENCRYPTION_KEY "$(openssl rand -base64 32 | tr -d '\n')"
+ensure_secret N8N_API_KEY "$(openssl rand -hex 32)"
 
 echo "==> Собираю образы (первый раз это несколько минут)"
 compose build
