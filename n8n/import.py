@@ -49,7 +49,7 @@ def ensure_header_safe(label, value):
         raise SystemExit(f'{label} содержит пробелы по краям - уберите их.')
 
 
-def request(url, token, method='GET', payload=None, allow_http_error=False):
+def request(url, token, method='GET', payload=None, allow_http_error=False, timeout=30):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header('X-N8N-API-KEY', token)
@@ -58,7 +58,7 @@ def request(url, token, method='GET', payload=None, allow_http_error=False):
         req.add_header('Content-Type', 'application/json')
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
             body = response.read().decode()
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as error:
@@ -68,7 +68,16 @@ def request(url, token, method='GET', payload=None, allow_http_error=False):
             return {'__httpError': error.code, '__detail': detail}
         raise SystemExit(f'n8n ответил {error.code} на {method} {url}\n  {detail}')
     except urllib.error.URLError as error:
-        raise SystemExit(f'Не достучался до n8n по адресу {url}\n  {error.reason}')
+        raise SystemExit(
+            f'Не достучался до n8n по адресу {url}\n'
+            f'  {error.reason}\n'
+            f'  Проверьте --n8n-url: адрес должен открываться в браузере.'
+        )
+    except TimeoutError:
+        raise SystemExit(
+            f'n8n не ответил за отведённое время: {url}\n'
+            f'  Проверьте --n8n-url - возможно, адрес указан неверно.'
+        )
 
 
 def create_credential(api, token, panel_key, panel_host):
@@ -132,8 +141,10 @@ def main():
             raise SystemExit(f'Не найден файл воркфлоу: {path}')
         workflows.append((name, json.loads(path.read_text(encoding='utf-8'))))
 
-    print(f'==> Проверяю доступ к n8n: {base}')
-    existing = request(f'{api}/workflows?limit=250', args.n8n_token)
+    # Первый запрос с коротким ожиданием: неверный адрес должен отвечать
+    # отказом сразу, а не выглядеть как зависший скрипт.
+    print(f'==> Проверяю доступ к n8n: {base} (жду до 10 секунд)')
+    existing = request(f'{api}/workflows?limit=250', args.n8n_token, timeout=10)
     existing_names = {item.get('name') for item in existing.get('data', [])}
     print(f'    Доступ есть. Воркфлоу на инстансе: {len(existing_names)}')
     for name in sorted(n for n in existing_names if n):
