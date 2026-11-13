@@ -95,7 +95,10 @@ ensure_secret ENCRYPTION_KEY "$(openssl rand -base64 32 | tr -d '\n')"
 ensure_secret N8N_API_KEY "$(openssl rand -hex 32)"
 
 echo "==> Собираю образы (первый раз это несколько минут)"
-compose build
+# Профильные сервисы compose при сборке пропускает, поэтому образ миграций
+# нужно собирать явно: иначе он остаётся со старой папкой миграций, и
+# drizzle молча не находит, что накатывать.
+compose --profile tools build
 
 echo "==> Поднимаю базу"
 compose up -d db

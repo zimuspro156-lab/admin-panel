@@ -21,7 +21,10 @@ echo "==> Забираю свежую версию"
 git -C .. pull --ff-only
 
 echo "==> Собираю образы"
-compose build
+# Профильные сервисы compose при сборке пропускает, поэтому образ миграций
+# нужно собирать явно: иначе он остаётся со старой папкой миграций, и
+# drizzle молча не находит, что накатывать.
+compose --profile tools build
 
 echo "==> Поднимаю базу"
 compose up -d db
@@ -41,5 +44,9 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-echo "    панель не ответила за минуту. Смотрите: bash -c 'cd $(pwd) && docker compose logs --tail=50 panel'" >&2
+echo >&2
+echo "    Панель не ответила за минуту. Что говорит её проверка здоровья:" >&2
+compose exec -T panel wget -qO- http://127.0.0.1:3000/api/health 2>&1 | sed 's/^/      /' >&2 || true
+echo >&2
+echo "    Полный лог: docker compose logs --tail=50 panel" >&2
 exit 1
