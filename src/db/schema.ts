@@ -106,6 +106,12 @@ export const settings = pgTable('settings', {
   /** Тон ответов. Правится в панели, деплой не нужен. */
   aiPrompt: text('ai_prompt').notNull().default(''),
   aiModel: text('ai_model').notNull().default('gpt-6-luna'),
+  /**
+   * База знаний для ИИ: сведения о бренде, товарах, типовых проблемах и
+   * готовые формулировки. Подмешивается в каждый запрос генерации черновика,
+   * чтобы ответы опирались на ваши материалы, а не только на общий тон.
+   */
+  aiKnowledge: text('ai_knowledge').notNull().default(''),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

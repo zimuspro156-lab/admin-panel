@@ -154,7 +154,13 @@ async function draftPending(marketplace: Marketplace) {
   const now = new Date()
 
   for (const review of targets) {
-    const result = await generateDraft(credentials.openaiApiKey, config.aiModel, config.aiPrompt, review)
+    const result = await generateDraft(
+      credentials.openaiApiKey,
+      config.aiModel,
+      config.aiPrompt,
+      review,
+      config.aiKnowledge,
+    )
 
     if (!result.ok) {
       // Отзыв не теряем: он останется оператору с пустым черновиком.

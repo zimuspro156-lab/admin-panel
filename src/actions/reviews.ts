@@ -5,8 +5,11 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/db'
 import { auditLog, reviews } from '@/db/schema'
+import { generateDraft } from '@/lib/ai'
 import { requireUser } from '@/lib/auth'
+import { getIntegrations, getSettings } from '@/lib/settings'
 import { dispatchQueue } from '@/lib/dispatch'
+import { eq as eqId } from 'drizzle-orm'
 import type { FormState } from './auth'
 
 const answerSchema = z.object({
@@ -120,4 +123,75 @@ export async function cancelAutoAnswerAction(formData: FormData): Promise<void> 
     reviewId: parsed.data,
   })
   revalidatePath('/reviews')
+}
+
+const draftSchema = z.object({
+  reviewId: z.coerce.number().int().positive(),
+  text: z.string().trim().max(5000, 'Черновик длиннее 5000 символов'),
+})
+
+/** Сохраняет правку черновика, ничего не отправляя. */
+export async function saveDraftAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser()
+
+  const parsed = draftSchema.safeParse({
+    reviewId: formData.get('reviewId'),
+    text: formData.get('text'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Проверьте текст' }
+  }
+
+  await db
+    .update(reviews)
+    .set({ aiDraft: parsed.data.text || null, updatedAt: new Date() })
+    .where(eqId(reviews.id, parsed.data.reviewId))
+
+  await db.insert(auditLog).values({
+    userId: user.id,
+    action: 'draft.edited',
+    reviewId: parsed.data.reviewId,
+  })
+
+  revalidatePath('/reviews')
+  return { ok: true, message: 'Черновик сохранён' }
+}
+
+/** Просит ИИ написать черновик заново - для отзыва в любом статусе. */
+export async function regenerateDraftAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser()
+
+  const parsed = reviewIdSchema.safeParse(formData.get('reviewId'))
+  if (!parsed.success) return { error: 'Некорректный отзыв' }
+
+  const [config, credentials] = await Promise.all([getSettings(), getIntegrations()])
+  if (!credentials.openaiApiKey) {
+    return { error: 'Ключ OpenAI не задан в разделе «Подключения»' }
+  }
+
+  const [review] = await db.select().from(reviews).where(eqId(reviews.id, parsed.data)).limit(1)
+  if (!review) return { error: 'Отзыв не найден' }
+
+  const result = await generateDraft(
+    credentials.openaiApiKey,
+    config.aiModel,
+    config.aiPrompt,
+    review,
+    config.aiKnowledge,
+  )
+  if (!result.ok) return { error: result.error }
+
+  await db
+    .update(reviews)
+    .set({ aiDraft: result.draft, aiModel: result.model, aiGeneratedAt: new Date(), updatedAt: new Date() })
+    .where(eqId(reviews.id, parsed.data))
+
+  await db.insert(auditLog).values({
+    userId: user.id,
+    action: 'draft.regenerated',
+    reviewId: parsed.data,
+  })
+
+  revalidatePath('/reviews')
+  return { ok: true, message: 'Черновик обновлён' }
 }

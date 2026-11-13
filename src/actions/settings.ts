@@ -15,6 +15,7 @@ const settingsSchema = z.object({
   ozonMarkProcessed: z.boolean(),
   aiPrompt: z.string().trim().min(20, 'Промпт слишком короткий').max(8000, 'Промпт длиннее 8000 символов'),
   aiModel: z.string().trim().min(1, 'Укажите модель').max(100),
+  aiKnowledge: z.string().trim().max(20000, 'База знаний длиннее 20000 символов'),
 })
 
 export async function updateSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -26,6 +27,7 @@ export async function updateSettingsAction(_prev: FormState, formData: FormData)
     ozonMarkProcessed: formData.get('ozonMarkProcessed') === 'on',
     aiPrompt: formData.get('aiPrompt'),
     aiModel: formData.get('aiModel'),
+    aiKnowledge: formData.get('aiKnowledge') ?? '',
   })
 
   if (!parsed.success) {

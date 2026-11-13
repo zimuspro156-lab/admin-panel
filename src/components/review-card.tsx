@@ -3,7 +3,9 @@
 import { useActionState, useState } from 'react'
 import {
   cancelAutoAnswerAction,
+  regenerateDraftAction,
   retryAnswerAction,
+  saveDraftAction,
   sendAnswerAction,
   skipReviewAction,
 } from '@/actions/reviews'
@@ -41,9 +43,11 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
   const [text, setText] = useState(review.answerText ?? '')
   const [sendState, sendForm, sendPending] = useActionState(sendAnswerAction, {})
   const [draftState, draftForm, draftPending] = useActionState(sendAnswerAction, {})
+  const [saveState, saveForm, savePending] = useActionState(saveDraftAction, {})
+  const [genState, genForm, genPending] = useActionState(regenerateDraftAction, {})
 
   const editable = EDITABLE_STATUSES.has(review.status) && !isDeadEnd(review)
-  const error = sendState.error ?? draftState.error
+  const error = sendState.error ?? draftState.error ?? saveState.error ?? genState.error
 
   return (
     <article className="card p-4">
@@ -160,6 +164,33 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
         </div>
       ) : null}
 
+      {/*
+        Для уже отвеченных отзывов черновик нужен не для отправки, а для
+        сравнения: видно, что ответили вы, и что предложил бы ИИ. Удобно,
+        чтобы оценить качество до включения автоответа.
+      */}
+      {review.status === 'sent' ? (
+        <div className="mt-3 rounded-lg border border-dashed border-[var(--color-line)] p-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <form action={genForm}>
+              <input type="hidden" name="reviewId" value={review.id} />
+              <button type="submit" className="btn-ghost text-xs" disabled={genPending}>
+                {genPending ? 'Думает...' : review.aiDraft ? 'Переписать черновик ИИ' : 'Что ответил бы ИИ?'}
+              </button>
+            </form>
+            {genState.error ? <span className="text-xs text-red-700">{genState.error}</span> : null}
+          </div>
+          {review.aiDraft ? (
+            <>
+              <p className="mt-3 mb-1 text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase">
+                Черновик ИИ
+              </p>
+              <p className="text-sm whitespace-pre-line">{review.aiDraft}</p>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       {review.lastError && review.status === 'skipped' ? (
         <div className="mt-4 rounded-lg bg-[var(--color-canvas)] p-3 text-sm text-[var(--color-muted)]">
           <p className="text-xs font-medium tracking-wide uppercase">Ответ невозможен</p>
@@ -192,12 +223,27 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
                     {draftPending ? 'Ставим...' : 'Поставить'}
                   </button>
                 </form>
+
+                <form action={genForm}>
+                  <input type="hidden" name="reviewId" value={review.id} />
+                  <button type="submit" className="btn-ghost text-xs" disabled={genPending}>
+                    {genPending ? 'Думает...' : 'Переписать'}
+                  </button>
+                </form>
               </div>
             </div>
           ) : (
-            <p className="text-xs text-[var(--color-muted)]">
-              Черновик ИИ ещё не пришёл из n8n. Ответ можно написать вручную.
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <form action={genForm}>
+                <input type="hidden" name="reviewId" value={review.id} />
+                <button type="submit" className="btn-ghost text-xs" disabled={genPending}>
+                  {genPending ? 'Думает...' : 'Сгенерировать черновик'}
+                </button>
+              </form>
+              <span className="text-xs text-[var(--color-muted)]">
+                Черновика пока нет. Можно написать ответ вручную.
+              </span>
+            </div>
           )}
 
           <form action={sendForm} className="space-y-2">
@@ -222,6 +268,15 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
                 </button>
               ) : null}
 
+              <button
+                type="submit"
+                formAction={saveForm}
+                className="btn-ghost text-sm"
+                disabled={savePending}
+              >
+                {savePending ? 'Сохраняем...' : 'Сохранить как черновик'}
+              </button>
+
               {review.status === 'new' || review.status === 'failed' ? (
                 <button type="submit" formAction={skipReviewAction} className="btn-ghost text-sm">
                   Не отвечать
@@ -233,6 +288,8 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
           </form>
 
           {error ? <p className="text-sm text-red-700">{error}</p> : null}
+          {saveState.message ? <p className="text-sm text-emerald-700">{saveState.message}</p> : null}
+          {genState.message ? <p className="text-sm text-emerald-700">{genState.message}</p> : null}
         </div>
       ) : null}
     </article>

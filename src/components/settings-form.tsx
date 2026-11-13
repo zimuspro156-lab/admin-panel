@@ -47,6 +47,31 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         </div>
 
         <div>
+          <label className="label" htmlFor="aiKnowledge">
+            База знаний: чем ИИ должен располагать
+          </label>
+          <textarea
+            id="aiKnowledge"
+            name="aiKnowledge"
+            defaultValue={settings.aiKnowledge}
+            rows={12}
+            placeholder={
+              'Бренд: ...\n' +
+              'Товары и их особенности: ...\n' +
+              'Частые претензии и что на них отвечать: ...\n' +
+              'Как связаться с поддержкой: ...\n' +
+              'Чего не обещаем: ...'
+            }
+            className="field resize-y text-sm"
+          />
+          <p className="mt-1 text-xs text-[var(--color-muted)]">
+            Эти сведения подмешиваются в каждый запрос к ИИ. Сюда пишут про бренд, товары, типовые
+            проблемы и готовые формулировки - чтобы ответы опирались на ваши материалы, а не на
+            общие слова. Чем конкретнее, тем лучше черновики.
+          </p>
+        </div>
+
+        <div>
           <label className="label" htmlFor="aiModel">
             Модель OpenAI
           </label>

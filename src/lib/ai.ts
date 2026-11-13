@@ -41,11 +41,29 @@ function userPrompt(review: DraftInput) {
 
 export type DraftResult = { ok: true; draft: string; model: string } | { ok: false; error: string }
 
+/** Собирает системное сообщение: правила ответа плюс материалы продавца. */
+function buildSystemPrompt(systemPrompt: string, knowledge: string) {
+  const rules = systemPrompt || DEFAULT_PROMPT
+  const facts = knowledge.trim()
+  if (!facts) return rules
+
+  return [
+    rules,
+    '',
+    'Ниже справочные сведения о бренде и товарах. Опирайся на них, когда они',
+    'относятся к отзыву. Не выдумывай того, чего здесь нет, и не пересказывай',
+    'этот блок целиком.',
+    '---',
+    facts,
+  ].join('\n')
+}
+
 export async function generateDraft(
   apiKey: string,
   model: string,
   systemPrompt: string,
   review: DraftInput,
+  knowledge = '',
 ): Promise<DraftResult> {
   const { ok, status, body } = await requestJson(ENDPOINT, {
     method: 'POST',
@@ -53,7 +71,7 @@ export async function generateDraft(
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: systemPrompt || DEFAULT_PROMPT },
+        { role: 'system', content: buildSystemPrompt(systemPrompt, knowledge) },
         { role: 'user', content: userPrompt(review) },
       ],
     }),
