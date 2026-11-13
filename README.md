@@ -81,6 +81,12 @@ bash install.sh
 миграции и запускает панель за Caddy. Подробности и настройка домена:
 [docs/setup.md](docs/setup.md).
 
+## Обновление
+
+```bash
+cd admin-panel/deploy && bash update.sh
+```
+
 ## Локальный запуск
 
 ```bash
