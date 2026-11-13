@@ -49,6 +49,26 @@ def ensure_header_safe(label, value):
         raise SystemExit(f'{label} содержит пробелы по краям - уберите их.')
 
 
+def ensure_looks_like_jwt(token):
+    """
+    Токен n8n - это JWT из трёх частей через точку. Чаще всего сюда попадает
+    обрезанное значение: скопировали вместе с многоточием из примера или
+    оборвали при копировании. n8n на такое отвечает голым 401, по которому
+    причину не понять.
+    """
+    if token.endswith('...') or token.endswith('…'):
+        raise SystemExit(
+            'Токен n8n заканчивается многоточием - похоже, скопирован пример, а не значение.\n'
+            '  Возьмите полный токен в n8n: Settings -> n8n API.'
+        )
+    if token.count('.') != 2 or any(not part for part in token.split('.')):
+        raise SystemExit(
+            f'Токен n8n не похож на настоящий (длина {len(token)}).\n'
+            '  Ожидается JWT из трёх частей через точку.\n'
+            '  Возьмите его в n8n: Settings -> n8n API.'
+        )
+
+
 def request(url, token, method='GET', payload=None, allow_http_error=False, timeout=30):
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -66,7 +86,13 @@ def request(url, token, method='GET', payload=None, allow_http_error=False, time
         if allow_http_error:
             # Вызывающий разберётся сам: схема credentials отличается между версиями n8n.
             return {'__httpError': error.code, '__detail': detail}
-        raise SystemExit(f'n8n ответил {error.code} на {method} {url}\n  {detail}')
+        hint = ''
+        if error.code == 401:
+            hint = (
+                '\n  Токен не принят. Он мог истечь, быть выпущен на другом инстансе n8n'
+                '\n  или скопирован не полностью. Новый: n8n -> Settings -> n8n API.'
+            )
+        raise SystemExit(f'n8n ответил {error.code} на {method} {url}\n  {detail}{hint}')
     except urllib.error.URLError as error:
         raise SystemExit(
             f'Не достучался до n8n по адресу {url}\n'
@@ -128,6 +154,7 @@ def main():
 
     ensure_header_safe('Токен n8n', args.n8n_token)
     ensure_header_safe('Ключ панели', args.panel_key)
+    ensure_looks_like_jwt(args.n8n_token)
 
     base = args.n8n_url.rstrip('/')
     api = f'{base}/api/v1'
