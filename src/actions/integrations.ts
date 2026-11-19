@@ -33,11 +33,47 @@ const credential = (max: number, label: string) =>
         }),
     )
 
+/**
+ * Адрес прокси. undici умеет только HTTP и HTTPS прокси - socks5 он не
+ * поддерживает, поэтому схему проверяем сразу, а не ловим потом невнятный
+ * сбой соединения на каждом запросе к маркетплейсу.
+ */
+const proxyUrlField = z
+  .string()
+  .transform((value) => value.trim())
+  .superRefine((value, ctx) => {
+    if (!value) return
+
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Прокси: нужен полный адрес, например http://логин:пароль@11.22.33.44:8080',
+      })
+      return
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Прокси: схема ${parsed.protocol} не поддерживается, нужен http:// или https:// (socks5 не умеем)`,
+      })
+      return
+    }
+
+    if (!parsed.hostname) {
+      ctx.addIssue({ code: 'custom', message: 'Прокси: в адресе нет хоста' })
+    }
+  })
+
 const schema = z.object({
   wbToken: credential(4000, 'Токен Wildberries'),
   ozonClientId: credential(100, 'Client-Id Ozon'),
   ozonApiKey: credential(500, 'Api-Key Ozon'),
   openaiApiKey: credential(500, 'Ключ OpenAI'),
+  mpProxyUrl: proxyUrlField,
 })
 
 /**
@@ -54,19 +90,27 @@ export async function updateIntegrationsAction(_prev: FormState, formData: FormD
     ozonClientId: formData.get('ozonClientId') ?? '',
     ozonApiKey: formData.get('ozonApiKey') ?? '',
     openaiApiKey: formData.get('openaiApiKey') ?? '',
+    mpProxyUrl: formData.get('mpProxyUrl') ?? '',
   })
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Проверьте поля' }
   }
 
-  const patch: Record<string, string> = {}
+  const patch: Record<string, string | null> = {}
   const changed: string[] = []
 
   for (const [field, value] of Object.entries(parsed.data)) {
     if (!value) continue
     patch[field] = encryptSecret(value)
     changed.push(field)
+  }
+
+  // Пустое поле означает «не менять», поэтому выключение прокси - отдельный
+  // флажок: иначе его нельзя было бы снять, только подменить другим адресом.
+  if (formData.get('mpProxyClear')) {
+    patch.mpProxyUrl = null
+    changed.push('mpProxyUrl (снят)')
   }
 
   if (changed.length === 0) {
@@ -97,18 +141,24 @@ export async function testConnectionsAction(_prev: FormState, _formData: FormDat
   const lines: string[] = []
 
   if (credentials.wbToken) {
-    const result = await checkWbToken(credentials.wbToken)
+    const result = await checkWbToken(credentials.wbToken, credentials.mpProxyUrl)
     lines.push(result.ok ? `Wildberries: доступ есть, ${result.detail}` : `Wildberries: ${result.error}`)
   } else {
     lines.push('Wildberries: токен не задан')
   }
 
   if (credentials.ozon) {
-    const result = await checkOzonCredentials(credentials.ozon)
+    const result = await checkOzonCredentials(credentials.ozon, credentials.mpProxyUrl)
     lines.push(result.ok ? `Ozon: доступ есть, ${result.detail}` : `Ozon: ${result.error}`)
   } else {
     lines.push('Ozon: ключи не заданы')
   }
+
+  lines.push(
+    credentials.mpProxyUrl
+      ? 'Прокси для маркетплейсов: используется, запросы к WB и Ozon шли через него'
+      : 'Прокси для маркетплейсов: не задан, запросы шли напрямую',
+  )
 
   if (credentials.openaiApiKey) {
     const result = await checkOpenAiKey(credentials.openaiApiKey, config.aiModel)

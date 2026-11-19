@@ -58,9 +58,9 @@ const PAGE_SIZE = 100
  */
 export async function fetchWbReviews(
   token: string,
-  options: { answered?: boolean; maxPages?: number } = {},
+  options: { answered?: boolean; maxPages?: number; proxyUrl?: string | null } = {},
 ): Promise<FetchResult> {
-  const { answered = false, maxPages = 20 } = options
+  const { answered = false, maxPages = 20, proxyUrl = null } = options
   const collected: NormalizedReview[] = []
 
   for (let page = 0; page < maxPages; page += 1) {
@@ -73,6 +73,7 @@ export async function fetchWbReviews(
     const { ok, status, body } = await requestJson(url.toString(), {
       method: 'GET',
       headers: { Authorization: token },
+      proxyUrl,
     })
 
     if (!ok) {
@@ -104,7 +105,11 @@ export async function fetchWbReviews(
  * GET /api/v1/feedbacks/archive - отзывы, уехавшие в архив. Нужен для полной
  * истории: основной метод их уже не отдаёт ни с isAnswered=true, ни с false.
  */
-export async function fetchWbArchive(token: string, maxPages = 50): Promise<FetchResult> {
+export async function fetchWbArchive(
+  token: string,
+  maxPages = 50,
+  proxyUrl: string | null = null,
+): Promise<FetchResult> {
   const collected: NormalizedReview[] = []
 
   for (let page = 0; page < maxPages; page += 1) {
@@ -116,6 +121,7 @@ export async function fetchWbArchive(token: string, maxPages = 50): Promise<Fetc
     const { ok, status, body } = await requestJson(url.toString(), {
       method: 'GET',
       headers: { Authorization: token },
+      proxyUrl,
     })
 
     if (!ok) return { ok: false, error: describeError('Wildberries (архив)', status, body) }
@@ -140,11 +146,13 @@ export async function answerWbReview(
   token: string,
   externalId: string,
   text: string,
+  proxyUrl: string | null = null,
 ): Promise<SendResult> {
   const { ok, status, body } = await requestJson(`${BASE}/api/v1/feedbacks/answer`, {
     method: 'POST',
     headers: { Authorization: token, 'content-type': 'application/json' },
     body: JSON.stringify({ id: externalId, text }),
+    proxyUrl,
   })
 
   if (!ok) {
@@ -160,10 +168,14 @@ export async function answerWbReview(
 }
 
 /** Дешёвая проверка доступа: счётчик необработанных отзывов. */
-export async function checkWbToken(token: string): Promise<{ ok: true; detail: string } | { ok: false; error: string }> {
+export async function checkWbToken(
+  token: string,
+  proxyUrl: string | null = null,
+): Promise<{ ok: true; detail: string } | { ok: false; error: string }> {
   const { ok, status, body } = await requestJson(`${BASE}/api/v1/feedbacks/count-unanswered`, {
     method: 'GET',
     headers: { Authorization: token },
+    proxyUrl,
   })
 
   // Разбор самого токена помогает там, где маркетплейс отвечает голым 401.

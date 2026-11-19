@@ -10,6 +10,7 @@ export type ConnectionsStatus = {
   wbTail: string | null
   ozonClientId: string | null
   openaiTail: string | null
+  mpProxyHost: string | null
 }
 
 function Filled({ ok, hint }: { ok: boolean; hint: string | null }) {
@@ -109,6 +110,44 @@ export function ConnectionsForm({ status }: { status: ConnectionsStatus }) {
           <p className="text-xs text-[var(--color-muted)]">
             Нужен для генерации черновиков. Без него отзывы будут приходить, но отвечать придётся
             вручную.
+          </p>
+        </section>
+
+        <section className="card space-y-3 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="font-medium">Прокси для маркетплейсов</h2>
+            {status.mpProxyHost ? (
+              <span className="text-xs text-emerald-700">{status.mpProxyHost}</span>
+            ) : (
+              <span className="text-xs text-[var(--color-muted)]">напрямую</span>
+            )}
+          </div>
+          <div>
+            <label className="label" htmlFor="mpProxyUrl">
+              Адрес прокси
+            </label>
+            <input
+              id="mpProxyUrl"
+              name="mpProxyUrl"
+              placeholder={
+                status.mpProxyHost
+                  ? 'Оставьте пустым, чтобы не менять'
+                  : 'http://логин:пароль@11.22.33.44:8080'
+              }
+              className="field font-mono text-xs"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="mpProxyClear" value="1" className="size-4" />
+            Не использовать прокси, ходить напрямую
+          </label>
+          <p className="text-xs text-[var(--color-muted)]">
+            Нужен, если панель стоит на зарубежном сервере: Wildberries и Ozon оттуда могут не
+            отвечать. Через прокси пойдут только запросы к маркетплейсам, в OpenAI панель ходит
+            напрямую. Подходит http:// или https:// прокси, socks5 не поддерживается. Адрес
+            хранится зашифрованным, в интерфейсе пароль из него не показывается.
           </p>
         </section>
 

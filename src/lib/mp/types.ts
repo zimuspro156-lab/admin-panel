@@ -1,3 +1,5 @@
+import { ProxyAgent, fetch } from 'undici'
+
 /** Общий вид отзыва, к которому приводятся обе площадки. */
 export type NormalizedReview = {
   externalId: string
@@ -31,9 +33,26 @@ export type SendResult =
 /** Общий таймаут на запрос к маркетплейсу: воркфлоу не должен висеть вечно. */
 export const REQUEST_TIMEOUT_MS = 20_000
 
+/**
+ * Диспетчеры кэшируем по адресу прокси: каждый держит пул соединений, и
+ * создавать новый на каждый запрос - значит не переиспользовать ни одного.
+ */
+const dispatchers = new Map<string, ProxyAgent>()
+
+function dispatcherFor(proxyUrl: string | null) {
+  if (!proxyUrl) return undefined
+
+  let agent = dispatchers.get(proxyUrl)
+  if (!agent) {
+    agent = new ProxyAgent(proxyUrl)
+    dispatchers.set(proxyUrl, agent)
+  }
+  return agent
+}
+
 export async function requestJson(
   url: string,
-  init: RequestInit,
+  init: RequestInit & { proxyUrl?: string | null },
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -41,20 +60,32 @@ export async function requestJson(
   try {
     let response: Response
     try {
-      response = await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' })
+      const { proxyUrl, ...rest } = init
+      response = (await fetch(url, {
+        ...rest,
+        dispatcher: dispatcherFor(proxyUrl ?? null),
+        signal: controller.signal,
+      } as Parameters<typeof fetch>[1])) as unknown as Response
     } catch (cause) {
       // Сюда попадают сетевые сбои и непригодные заголовки (например, ключ,
       // сохранённый до появления проверки символов). Падать нельзя: ручку
       // зовёт n8n, и ей нужен понятный ответ.
       const message = cause instanceof Error ? cause.message : String(cause)
       const invalidHeader = /header/i.test(message)
+      // «fetch failed» само по себе ничего не объясняет: причина лежит в
+      // cause (ECONNREFUSED, ENOTFOUND, таймаут). Достаём её и, если запрос
+      // шёл через прокси, прямо говорим, что виноват может быть он.
+      const inner = cause instanceof Error ? (cause.cause as Error | undefined) : undefined
+      const detail = inner?.message && inner.message !== message ? `${message}: ${inner.message}` : message
+      const viaProxy = init.proxyUrl ? ' Запрос шёл через прокси - проверьте его адрес, порт и доступность.' : ''
+
       return {
         ok: false,
         status: 0,
         body: {
           message: invalidHeader
             ? 'не удалось отправить запрос: в ключе есть недопустимые символы, задайте его заново'
-            : `не удалось соединиться: ${message}`,
+            : `не удалось соединиться: ${detail}.${viaProxy}`,
         },
       }
     }

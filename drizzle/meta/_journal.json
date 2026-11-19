@@ -15,6 +15,13 @@
       "when": 1794561187224,
       "tag": "0001_tan_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795101558209,
+      "tag": "0002_illegal_jetstream",
+      "breakpoints": true
     }
   ]
 }

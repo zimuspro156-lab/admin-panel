@@ -19,6 +19,8 @@ export type ResolvedIntegrations = {
   wbToken: string | null
   ozon: { clientId: string; apiKey: string } | null
   openaiApiKey: string | null
+  /** Прокси для WB и Ozon. В OpenAI ходим напрямую. */
+  mpProxyUrl: string | null
 }
 
 /**
@@ -29,7 +31,7 @@ export async function getIntegrations(): Promise<ResolvedIntegrations> {
   const [row] = await db.select().from(integrations).where(eq(integrations.id, 1)).limit(1)
   if (!row) {
     await db.insert(integrations).values({ id: 1 }).onConflictDoNothing()
-    return { wbToken: null, ozon: null, openaiApiKey: null }
+    return { wbToken: null, ozon: null, openaiApiKey: null, mpProxyUrl: null }
   }
 
   const read = (value: string | null) => {
@@ -50,6 +52,7 @@ export async function getIntegrations(): Promise<ResolvedIntegrations> {
     wbToken: read(row.wbToken),
     ozon: clientId && apiKey ? { clientId, apiKey } : null,
     openaiApiKey: read(row.openaiApiKey),
+    mpProxyUrl: read(row.mpProxyUrl),
   }
 }
 
@@ -63,5 +66,21 @@ export async function getIntegrationsStatus() {
     wbTail: resolved.wbToken ? resolved.wbToken.slice(-6) : null,
     ozonClientId: resolved.ozon?.clientId ?? null,
     openaiTail: resolved.openaiApiKey ? resolved.openaiApiKey.slice(-4) : null,
+    // Пароль из URL не показываем, только адрес, куда панель ходит.
+    mpProxyHost: resolved.mpProxyUrl ? proxyLabel(resolved.mpProxyUrl) : null,
+  }
+}
+
+/**
+ * Адрес прокси без логина и пароля: в интерфейсе нужно видеть, через что
+ * ходит панель, но не сам секрет.
+ */
+function proxyLabel(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const auth = parsed.username ? ' (с логином)' : ''
+    return `${parsed.protocol}//${parsed.host}${auth}`
+  } catch {
+    return 'адрес задан'
   }
 }

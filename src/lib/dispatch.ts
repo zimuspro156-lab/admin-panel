@@ -102,11 +102,22 @@ export async function dispatchQueue(options: { limit?: number; reviewId?: number
 
     if (row.marketplace === 'wb') {
       result = credentials.wbToken
-        ? await answerWbReview(credentials.wbToken, row.external_id, row.answer_text)
+        ? await answerWbReview(
+            credentials.wbToken,
+            row.external_id,
+            row.answer_text,
+            credentials.mpProxyUrl,
+          )
         : { ok: false, error: 'Токен Wildberries не задан в разделе «Подключения»' }
     } else if (row.marketplace === 'ozon') {
       result = credentials.ozon
-        ? await answerOzonReview(credentials.ozon, row.external_id, row.answer_text, config.ozonMarkProcessed)
+        ? await answerOzonReview(
+            credentials.ozon,
+            row.external_id,
+            row.answer_text,
+            config.ozonMarkProcessed,
+            credentials.mpProxyUrl,
+          )
         : { ok: false, error: 'Ключи Ozon не заданы в разделе «Подключения»' }
     } else {
       result = { ok: false, error: `Неизвестная площадка: ${row.marketplace}` }

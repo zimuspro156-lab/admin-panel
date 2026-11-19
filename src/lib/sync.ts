@@ -263,11 +263,11 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
   let fetched
   if (marketplace === 'wb') {
     fetched = credentials.wbToken
-      ? await fetchWbReviews(credentials.wbToken)
+      ? await fetchWbReviews(credentials.wbToken, { proxyUrl: credentials.mpProxyUrl })
       : ({ ok: false, error: 'Токен Wildberries не задан в разделе «Подключения»' } as const)
   } else {
     fetched = credentials.ozon
-      ? await fetchOzonReviews(credentials.ozon)
+      ? await fetchOzonReviews(credentials.ozon, { proxyUrl: credentials.mpProxyUrl })
       : ({ ok: false, error: 'Ключи Ozon не заданы в разделе «Подключения»' } as const)
   }
 
@@ -324,8 +324,12 @@ export async function importHistory(): Promise<HistoryImport[]> {
     wb.error = 'Токен Wildberries не задан в разделе «Подключения»'
   } else {
     const parts = await Promise.all([
-      fetchWbReviews(credentials.wbToken, { answered: true, maxPages: 50 }),
-      fetchWbArchive(credentials.wbToken, 50),
+      fetchWbReviews(credentials.wbToken, {
+        answered: true,
+        maxPages: 50,
+        proxyUrl: credentials.mpProxyUrl,
+      }),
+      fetchWbArchive(credentials.wbToken, 50, credentials.mpProxyUrl),
     ])
     const failed = parts.find((part) => !part.ok)
     if (failed && !failed.ok) {
@@ -344,7 +348,11 @@ export async function importHistory(): Promise<HistoryImport[]> {
   if (!credentials.ozon) {
     ozon.error = 'Ключи Ozon не заданы в разделе «Подключения»'
   } else {
-    const fetched = await fetchOzonReviews(credentials.ozon, { status: 'ALL', maxPages: 50 })
+    const fetched = await fetchOzonReviews(credentials.ozon, {
+      status: 'ALL',
+      maxPages: 50,
+      proxyUrl: credentials.mpProxyUrl,
+    })
     if (!fetched.ok) {
       ozon.error = fetched.error
     } else {

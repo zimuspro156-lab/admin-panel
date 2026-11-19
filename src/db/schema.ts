@@ -126,6 +126,12 @@ export const integrations = pgTable('integrations', {
   ozonClientId: text('ozon_client_id'),
   ozonApiKey: text('ozon_api_key'),
   openaiApiKey: text('openai_api_key'),
+  /**
+   * Прокси для запросов к маркетплейсам. Нужен, когда панель стоит за
+   * рубежом: WB и Ozon оттуда могут быть недоступны. В OpenAI панель при
+   * этом ходит напрямую. Хранится зашифрованным - в URL бывает пароль.
+   */
+  mpProxyUrl: text('mp_proxy_url'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

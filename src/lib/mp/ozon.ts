@@ -82,9 +82,9 @@ const PAGE_SIZE = 100
  */
 export async function fetchOzonReviews(
   credentials: OzonCredentials,
-  options: { status?: 'UNPROCESSED' | 'ALL'; maxPages?: number } = {},
+  options: { status?: 'UNPROCESSED' | 'ALL'; maxPages?: number; proxyUrl?: string | null } = {},
 ): Promise<FetchResult> {
-  const { status: reviewStatus = 'UNPROCESSED', maxPages = 20 } = options
+  const { status: reviewStatus = 'UNPROCESSED', maxPages = 20, proxyUrl = null } = options
   const collected: NormalizedReview[] = []
   let lastId = ''
 
@@ -98,6 +98,7 @@ export async function fetchOzonReviews(
         status: reviewStatus,
         ...(lastId ? { last_id: lastId } : {}),
       }),
+      proxyUrl,
     })
 
     if (!ok) return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
@@ -118,6 +119,7 @@ export async function answerOzonReview(
   externalId: string,
   text: string,
   markProcessed: boolean,
+  proxyUrl: string | null = null,
 ): Promise<SendResult> {
   const { ok, status, body } = await requestJson(`${BASE}/v1/review/comment/create`, {
     method: 'POST',
@@ -127,6 +129,7 @@ export async function answerOzonReview(
       text,
       mark_review_as_processed: markProcessed,
     }),
+    proxyUrl,
   })
 
   if (!ok) {
@@ -147,11 +150,13 @@ export async function answerOzonReview(
 /** POST /v1/review/count - самый дешёвый способ проверить ключи и подписку. */
 export async function checkOzonCredentials(
   credentials: OzonCredentials,
+  proxyUrl: string | null = null,
 ): Promise<{ ok: true; detail: string } | { ok: false; error: string }> {
   const { ok, status, body } = await requestJson(`${BASE}/v1/review/count`, {
     method: 'POST',
     headers: headers(credentials),
     body: JSON.stringify({}),
+    proxyUrl,
   })
 
   if (!ok) return { ok: false, error: describeError('Ozon', status, body) + subscriptionHint(status) }
