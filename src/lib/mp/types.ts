@@ -72,12 +72,21 @@ export async function requestJson(
       // зовёт n8n, и ей нужен понятный ответ.
       const message = cause instanceof Error ? cause.message : String(cause)
       const invalidHeader = /header/i.test(message)
-      // «fetch failed» само по себе ничего не объясняет: причина лежит в
-      // cause (ECONNREFUSED, ENOTFOUND, таймаут). Достаём её и, если запрос
-      // шёл через прокси, прямо говорим, что виноват может быть он.
-      const inner = cause instanceof Error ? (cause.cause as Error | undefined) : undefined
-      const detail = inner?.message && inner.message !== message ? `${message}: ${inner.message}` : message
-      const viaProxy = init.proxyUrl ? ' Запрос шёл через прокси - проверьте его адрес, порт и доступность.' : ''
+      const detail = describeCause(cause)
+
+      // Прокси отказал в авторизации - это не «сеть не работает», а неверные
+      // логин или пароль, и чинится иначе.
+      if (/407|proxy auth/i.test(detail)) {
+        return {
+          ok: false,
+          status: 0,
+          body: { message: 'прокси не принял логин и пароль (407). Проверьте их в разделе «Подключения»' },
+        }
+      }
+
+      const viaProxy = init.proxyUrl
+        ? ' Запрос шёл через прокси - проверьте его адрес, порт, логин и пароль.'
+        : ''
 
       return {
         ok: false,
@@ -106,6 +115,24 @@ export async function requestJson(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * «fetch failed» ничего не объясняет: настоящая причина лежит глубоко в
+ * цепочке cause - на три уровня ниже прячется и ECONNREFUSED, и отказ
+ * прокси в авторизации. Собираем всю цепочку, иначе оператор видит
+ * бессмысленное «Request was cancelled».
+ */
+function describeCause(cause: unknown): string {
+  const seen: string[] = []
+  let current: unknown = cause
+
+  for (let level = 0; level < 5 && current instanceof Error; level += 1) {
+    if (current.message && !seen.includes(current.message)) seen.push(current.message)
+    current = current.cause
+  }
+
+  return seen.length > 0 ? seen.join(': ') : String(cause)
 }
 
 export function describeError(prefix: string, status: number, body: unknown): string {

@@ -58,7 +58,9 @@ const proxyUrlField = z
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       ctx.addIssue({
         code: 'custom',
-        message: `Прокси: схема ${parsed.protocol} не поддерживается, нужен http:// или https:// (socks5 не умеем)`,
+        message:
+          `Прокси: схема ${parsed.protocol} не поддерживается. Нужен http:// или https://` +
+          ' - у провайдера обычно есть HTTP-вариант того же прокси, возьмите его',
       })
       return
     }
