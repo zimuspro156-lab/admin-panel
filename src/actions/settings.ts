@@ -12,6 +12,7 @@ import type { FormState } from './auth'
 
 const settingsSchema = z.object({
   autoReplyEnabled: z.boolean(),
+  syncAnswered: z.boolean(),
   ozonMarkProcessed: z.boolean(),
   aiPrompt: z.string().trim().min(20, 'Промпт слишком короткий').max(8000, 'Промпт длиннее 8000 символов'),
   aiModel: z.string().trim().min(1, 'Укажите модель').max(100),
@@ -24,6 +25,7 @@ export async function updateSettingsAction(_prev: FormState, formData: FormData)
 
   const parsed = settingsSchema.safeParse({
     autoReplyEnabled: formData.get('autoReplyEnabled') === 'on',
+    syncAnswered: formData.get('syncAnswered') === 'on',
     ozonMarkProcessed: formData.get('ozonMarkProcessed') === 'on',
     aiPrompt: formData.get('aiPrompt'),
     aiModel: formData.get('aiModel'),

@@ -24,6 +24,14 @@ export type MarketplaceSync = {
 /** Сколько черновиков генерируем за один прогон: защита от счёта за OpenAI. */
 const MAX_DRAFTS_PER_RUN = 100
 
+/**
+ * Сколько последних отвеченных отзывов подтягивать при включённом
+ * переключателе. Они нужны для сравнения «что ответили мы - что предложил
+ * бы ИИ», и десятка-другой для этого достаточно: вся история грузится
+ * отдельной кнопкой, а тянуть её каждый час незачем.
+ */
+const ANSWERED_PER_RUN = 20
+
 async function upsert(marketplace: Marketplace, incoming: NormalizedReview[]) {
   if (incoming.length === 0) return { created: [] as number[], inserted: 0, updated: 0 }
 
@@ -258,7 +266,7 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
     error: null,
   }
 
-  const credentials = await getIntegrations()
+  const [credentials, config] = await Promise.all([getIntegrations(), getSettings()])
 
   let fetched
   if (marketplace === 'wb') {
@@ -276,29 +284,67 @@ async function syncMarketplace(marketplace: Marketplace): Promise<MarketplaceSyn
     return { ...base, error: fetched.error }
   }
 
+  /**
+   * Отвеченные отзывы - отдельный запрос и отдельная ветка. Сбой здесь не
+   * должен ронять рабочую очередь: она важнее, а это витрина для сравнения.
+   */
+  const reviewsToSave = [...fetched.reviews]
+  let answeredError: string | null = null
+
+  if (config.syncAnswered) {
+    const answered =
+      marketplace === 'wb'
+        ? credentials.wbToken
+          ? await fetchWbReviews(credentials.wbToken, {
+              answered: true,
+              maxPages: 1,
+              take: ANSWERED_PER_RUN,
+              proxyUrl: credentials.mpProxyUrl,
+            })
+          : null
+        : credentials.ozon
+          ? await fetchOzonReviews(credentials.ozon, {
+              status: 'PROCESSED',
+              maxPages: 1,
+              limit: ANSWERED_PER_RUN,
+              proxyUrl: credentials.mpProxyUrl,
+            })
+          : null
+
+    if (answered?.ok) {
+      // Маркетплейс отдаёт их свежими сверху, поэтому режем хвост сами:
+      // Ozon меньше двадцати за раз не отдаёт.
+      reviewsToSave.push(...answered.reviews.slice(0, ANSWERED_PER_RUN))
+    } else if (answered && !answered.ok) {
+      answeredError = `отвеченные отзывы не загрузились: ${answered.error}`
+    }
+  }
+
   if (marketplace === 'ozon') await healEmptyReviewFailures()
 
-  const { created, updated } = await upsert(marketplace, fetched.reviews)
+  const { created, updated } = await upsert(marketplace, reviewsToSave)
   const drafts = await draftPending(marketplace)
   const queued = await queueDrafted(marketplace)
 
+  const error = [drafts.error, answeredError].filter(Boolean).join('; ') || null
+
   await db.insert(syncRuns).values({
     marketplace,
-    fetched: fetched.reviews.length,
+    fetched: reviewsToSave.length,
     created: created.length,
-    status: drafts.error ? 'error' : 'ok',
-    error: drafts.error,
+    status: error ? 'error' : 'ok',
+    error,
   })
 
   return {
     ...base,
     ok: true,
-    fetched: fetched.reviews.length,
+    fetched: reviewsToSave.length,
     created: created.length,
     updated,
     drafted: drafts.drafted,
     queued,
-    error: drafts.error,
+    error,
   }
 }
 

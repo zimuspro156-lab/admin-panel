@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "sync_answered" boolean DEFAULT false NOT NULL;

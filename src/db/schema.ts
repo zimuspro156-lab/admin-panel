@@ -101,6 +101,13 @@ export const settings = pgTable('settings', {
    * не срабатывает никогда, даже если переключатель включён.
    */
   autoReplyEnabled: boolean('auto_reply_enabled').notNull().default(false),
+  /**
+   * Подтягивать ли вместе с рабочей очередью последние уже отвеченные
+   * отзывы. Нужны они только для сравнения: видно, что ответили вы, и что
+   * предложил бы ИИ. В работу такие отзывы не берутся и денег на черновики
+   * не тратят - черновик для них генерируется по кнопке.
+   */
+  syncAnswered: boolean('sync_answered').notNull().default(false),
   /** Ozon: помечать отзыв обработанным вместе с комментарием. */
   ozonMarkProcessed: boolean('ozon_mark_processed').notNull().default(true),
   /** Тон ответов. Правится в панели, деплой не нужен. */

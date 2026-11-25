@@ -28,6 +28,27 @@ export function SettingsForm({ settings }: { settings: Settings }) {
         </label>
       </section>
 
+      <section className="card p-4">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="syncAnswered"
+            defaultChecked={settings.syncAnswered}
+            className="mt-1 size-4"
+          />
+          <span>
+            <span className="font-medium">Подтягивать отвеченные отзывы</span>
+            <span className="mt-1 block text-sm text-[var(--color-muted)]">
+              Включён - вместе с рабочей очередью приходят последние 20 отзывов, на которые ответ
+              уже дан. В карточке будет видно, что ответили вы, а по кнопке «Что ответил бы ИИ?» -
+              что предложил бы ИИ. Удобно, чтобы оценить его до включения автоответа. В работу
+              такие отзывы не берутся и денег на черновики сами не тратят. Выключен - приходят
+              только неотвеченные.
+            </span>
+          </span>
+        </label>
+      </section>
+
       <section className="card space-y-4 p-4">
         <div>
           <label className="label" htmlFor="aiPrompt">

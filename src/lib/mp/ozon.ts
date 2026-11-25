@@ -82,9 +82,17 @@ const PAGE_SIZE = 100
  */
 export async function fetchOzonReviews(
   credentials: OzonCredentials,
-  options: { status?: 'UNPROCESSED' | 'ALL'; maxPages?: number; proxyUrl?: string | null } = {},
+  options: {
+    status?: 'UNPROCESSED' | 'PROCESSED' | 'ALL'
+    maxPages?: number
+    limit?: number
+    proxyUrl?: string | null
+  } = {},
 ): Promise<FetchResult> {
-  const { status: reviewStatus = 'UNPROCESSED', maxPages = 20, proxyUrl = null } = options
+  const { status: reviewStatus = 'UNPROCESSED', maxPages = 20, limit, proxyUrl = null } = options
+  // Ozon принимает limit от 20 до 100: меньше 20 он отвергает, поэтому
+  // просьбу о десятке отзывов округляем вверх, а лишнее отсечём сами.
+  const pageSize = Math.min(Math.max(limit ?? PAGE_SIZE, 20), PAGE_SIZE)
   const collected: NormalizedReview[] = []
   let lastId = ''
 
@@ -93,7 +101,7 @@ export async function fetchOzonReviews(
       method: 'POST',
       headers: headers(credentials),
       body: JSON.stringify({
-        limit: PAGE_SIZE,
+        limit: pageSize,
         sort_dir: 'DESC',
         status: reviewStatus,
         ...(lastId ? { last_id: lastId } : {}),

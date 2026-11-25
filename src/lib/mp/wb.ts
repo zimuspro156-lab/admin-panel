@@ -58,16 +58,19 @@ const PAGE_SIZE = 100
  */
 export async function fetchWbReviews(
   token: string,
-  options: { answered?: boolean; maxPages?: number; proxyUrl?: string | null } = {},
+  options: { answered?: boolean; maxPages?: number; take?: number; proxyUrl?: string | null } = {},
 ): Promise<FetchResult> {
-  const { answered = false, maxPages = 20, proxyUrl = null } = options
+  const { answered = false, maxPages = 20, take = PAGE_SIZE, proxyUrl = null } = options
+  // WB принимает take от 1 до 5000, но страницу больше сотни разбирать
+  // незачем: лишнее всё равно отфильтруется при сохранении.
+  const pageSize = Math.min(Math.max(take, 1), PAGE_SIZE)
   const collected: NormalizedReview[] = []
 
   for (let page = 0; page < maxPages; page += 1) {
     const url = new URL('/api/v1/feedbacks', BASE)
     url.searchParams.set('isAnswered', String(answered))
-    url.searchParams.set('take', String(PAGE_SIZE))
-    url.searchParams.set('skip', String(page * PAGE_SIZE))
+    url.searchParams.set('take', String(pageSize))
+    url.searchParams.set('skip', String(page * pageSize))
     url.searchParams.set('order', 'dateDesc')
 
     const { ok, status, body } = await requestJson(url.toString(), {
@@ -95,7 +98,7 @@ export async function fetchWbReviews(
     collected.push(...feedbacks.map(normalize))
 
     // Неполная страница означает, что дальше ничего нет.
-    if (feedbacks.length < PAGE_SIZE) break
+    if (feedbacks.length < pageSize) break
   }
 
   return { ok: true, reviews: collected }
