@@ -34,6 +34,15 @@ export type SendResult =
 export const REQUEST_TIMEOUT_MS = 20_000
 
 /**
+ * Через прокси соединение устанавливается в два шага: сначала до прокси,
+ * потом туннель до маркетплейса. Стандартных десяти секунд на это хватает
+ * не всегда, и запрос падал с Connect Timeout, хотя прокси живой - просто
+ * медленный. Даём больше и на соединение, и на весь запрос.
+ */
+const PROXY_CONNECT_TIMEOUT_MS = 20_000
+const PROXY_REQUEST_TIMEOUT_MS = 45_000
+
+/**
  * Диспетчеры кэшируем по адресу прокси: каждый держит пул соединений, и
  * создавать новый на каждый запрос - значит не переиспользовать ни одного.
  */
@@ -44,7 +53,11 @@ function dispatcherFor(proxyUrl: string | null) {
 
   let agent = dispatchers.get(proxyUrl)
   if (!agent) {
-    agent = new ProxyAgent(proxyUrl)
+    agent = new ProxyAgent({
+      uri: proxyUrl,
+      connectTimeout: PROXY_CONNECT_TIMEOUT_MS,
+      requestTls: { timeout: PROXY_CONNECT_TIMEOUT_MS },
+    })
     dispatchers.set(proxyUrl, agent)
   }
   return agent
@@ -55,7 +68,8 @@ export async function requestJson(
   init: RequestInit & { proxyUrl?: string | null },
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const limit = init.proxyUrl ? PROXY_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS
+  const timeout = setTimeout(() => controller.abort(), limit)
 
   try {
     let response: Response
@@ -81,6 +95,18 @@ export async function requestJson(
           ok: false,
           status: 0,
           body: { message: 'прокси не принял логин и пароль (407). Проверьте их в разделе «Подключения»' },
+        }
+      }
+
+      if (init.proxyUrl && /timeout/i.test(detail)) {
+        return {
+          ok: false,
+          status: 0,
+          body: {
+            message:
+              'прокси не ответил вовремя. Он может быть перегружен или не пропускать этот адрес - ' +
+              'попробуйте выключить прокси в «Подключениях» и проверить снова',
+          },
         }
       }
 
