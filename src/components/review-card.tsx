@@ -9,6 +9,7 @@ import {
   sendAnswerAction,
   skipReviewAction,
 } from '@/actions/reviews'
+import { describeMatch, type KnowledgeMatch } from '@/lib/knowledge'
 import { MarketplaceBadge, StatusBadge, Stars } from './badges'
 
 export type ReviewCardData = {
@@ -30,6 +31,8 @@ export type ReviewCardData = {
   lastError: string | null
   createdAtLabel: string
   sentAtLabel: string | null
+  /** Нашёлся ли этот товар в базе знаний - и чем именно совпало. */
+  knowledge: KnowledgeMatch
 }
 
 const EDITABLE_STATUSES = new Set(['new', 'failed', 'skipped', 'queued'])
@@ -79,6 +82,34 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
           <span className="ml-2 font-normal text-[var(--color-muted)]">арт. {review.productArticle}</span>
         ) : null}
       </p>
+
+      {/*
+        Флажок базы знаний. Оператору важно до чтения черновика понимать,
+        опирается ИИ на ваши сведения об этом товаре или отвечает общими
+        словами - ответ во втором случае стоит читать внимательнее.
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {review.knowledge.found ? (
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            <span aria-hidden>✓</span>
+            Товар есть в базе знаний
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            <span aria-hidden>!</span>
+            Товара нет в базе знаний
+          </span>
+        )}
+        {review.knowledge.found ? (
+          <span className="text-xs text-[var(--color-muted)]">{describeMatch(review.knowledge)}</span>
+        ) : null}
+      </div>
+
+      {review.knowledge.excerpt ? (
+        <p className="mt-1 border-l-2 border-emerald-200 pl-2 text-xs text-[var(--color-muted)]">
+          {review.knowledge.excerpt}
+        </p>
+      ) : null}
 
       <div className="mt-2 space-y-1 text-sm whitespace-pre-line">
         {review.text ? <p>{review.text}</p> : null}

@@ -3,6 +3,7 @@ import { Filters } from '@/components/filters'
 import { ReviewCard, type ReviewCardData } from '@/components/review-card'
 import { formatDateTime, plural } from '@/lib/format'
 import { PAGE_SIZE, getLastSyncRuns, getReviewCounters, listReviews, parseFilters } from '@/lib/reviews'
+import { matchKnowledge } from '@/lib/knowledge'
 import { getSettings } from '@/lib/settings'
 import { requireUser } from '@/lib/auth'
 
@@ -43,6 +44,7 @@ export default async function ReviewsPage({ searchParams }: PageProps) {
     lastError: review.lastError,
     createdAtLabel: formatDateTime(review.mpCreatedAt ?? review.createdAt),
     sentAtLabel: review.sentAt ? formatDateTime(review.sentAt) : null,
+    knowledge: matchKnowledge(config.aiKnowledge, review),
   }))
 
   function pageHref(page: number) {
